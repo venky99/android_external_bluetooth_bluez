@@ -6,6 +6,7 @@
  *  Copyright (C) 2002-2003  Maxim Krasnyansky <maxk@qualcomm.com>
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
  *  Copyright (C) 2002-2003  Stephen Crane <steve.crane@rococosoft.com>
+ *  Copyright (c) 2010, Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -297,6 +298,8 @@ extern "C" {
 #define SDP_ATTR_VERSION			0x0203
 #define SDP_ATTR_PRIMARY_RECORD			0x0204
 #define SDP_ATTR_VENDOR_ID_SOURCE		0x0205
+
+#define SDP_ATTR_GOEP_L2CAP_PSM 		0x0200
 
 #define SDP_ATTR_HID_DEVICE_RELEASE_NUMBER	0x0200
 #define SDP_ATTR_HID_PARSER_VERSION		0x0201

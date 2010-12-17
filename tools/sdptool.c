@@ -1055,6 +1055,11 @@ static void print_service_class(void *value, void *userData)
 		printf("  \"%s\" (0x%s)\n", ServiceClassUUID_str, UUID_str);
 	else
 		printf("  UUID 128: %s\n", UUID_str);
+
+	/* Determine if this is an GOEP 2.0 capable profile. */
+	if (userData && sdp_uuid_to_proto(uuid) == OBEX_OBJPUSH_PROFILE_ID) {
+		*((int*)userData) = 1;
+	}
 }
 
 static void print_service_desc(void *value, void *user)
@@ -1145,6 +1150,7 @@ static void print_profile_desc(void *value, void *userData)
 static void print_service_attr(sdp_record_t *rec)
 {
 	sdp_list_t *list = 0, *proto = 0;
+	int is_goep2_srv = 0;
 
 	sdp_record_print(rec);
 
@@ -1152,7 +1158,7 @@ static void print_service_attr(sdp_record_t *rec)
 
 	if (sdp_get_service_classes(rec, &list) == 0) {
 		printf("Service Class ID List:\n");
-		sdp_list_foreach(list, print_service_class, 0);
+		sdp_list_foreach(list, print_service_class, &is_goep2_srv);
 		sdp_list_free(list, free);
 	}
 	if (sdp_get_access_protos(rec, &proto) == 0) {
@@ -1170,6 +1176,12 @@ static void print_service_attr(sdp_record_t *rec)
 		printf("Profile Descriptor List:\n");
 		sdp_list_foreach(list, print_profile_desc, 0);
 		sdp_list_free(list, free);
+	}
+
+	if (is_goep2_srv) {
+		sdp_data_t *d = sdp_data_get(rec, SDP_ATTR_GOEP_L2CAP_PSM);
+	if (d)
+		printf("GOEP L2CAP PSM: %d\n", d->val.uint16);
 	}
 }
 
@@ -1799,6 +1811,7 @@ static int add_opush(sdp_session_t *session, svc_info_t *si)
 	sdp_list_t *aproto, *proto[3];
 	sdp_record_t record;
 	uint8_t chan = si->channel ? si->channel : 9;
+	uint16_t psm = si->psm;
 	sdp_data_t *channel;
 #ifdef ANDROID
 	uint8_t formats[] = { 0x01, 0x02, 0xff };
@@ -1809,6 +1822,7 @@ static int add_opush(sdp_session_t *session, svc_info_t *si)
 	unsigned int i;
 	uint8_t dtd = SDP_UINT8;
 	sdp_data_t *sflist;
+	sdp_data_t *goeppsm = NULL;
 	int ret = 0;
 
 	memset(&record, 0, sizeof(sdp_record_t));
@@ -1822,8 +1836,12 @@ static int add_opush(sdp_session_t *session, svc_info_t *si)
 	svclass_id = sdp_list_append(0, &opush_uuid);
 	sdp_set_service_classes(&record, svclass_id);
 
+	/*
+	 * Implicitly set OPP profile version to 1.2 when adding a record
+	 * containing a PSM (for OBEX-over-L2CAP)
+	 */
 	sdp_uuid16_create(&profile[0].uuid, OBEX_OBJPUSH_PROFILE_ID);
-	profile[0].version = 0x0100;
+	profile[0].version = psm ? 0x0102 : 0x0100;
 	pfseq = sdp_list_append(0, profile);
 	sdp_set_profile_descs(&record, pfseq);
 
@@ -1851,6 +1869,13 @@ static int add_opush(sdp_session_t *session, svc_info_t *si)
 	sflist = sdp_seq_alloc(dtds, values, sizeof(formats));
 	sdp_attr_add(&record, SDP_ATTR_SUPPORTED_FORMATS_LIST, sflist);
 
+	if (psm) {
+		goeppsm = sdp_data_alloc(SDP_UINT16, &psm);
+		if (goeppsm) {
+			sdp_attr_add(&record, SDP_ATTR_GOEP_L2CAP_PSM, goeppsm);
+		}
+	}
+
 	sdp_set_info_attr(&record, "OBEX Object Push", 0, 0);
 
 	if (sdp_device_record_register(session, &interface, &record, SDP_RECORD_PERSIST) < 0) {
@@ -1862,6 +1887,10 @@ static int add_opush(sdp_session_t *session, svc_info_t *si)
 	printf("OBEX Object Push service registered\n");
 
 end:
+	if (psm && goeppsm) {
+		sdp_data_free(goeppsm);
+	}
+	sdp_data_free(sflist);
 	sdp_data_free(channel);
 	sdp_list_free(proto[0], 0);
 	sdp_list_free(proto[1], 0);
@@ -3658,7 +3687,7 @@ static struct option add_options[] = {
 
 static const char *add_help =
 	"Usage:\n"
-	"\tadd [--handle=RECORD_HANDLE --channel=CHANNEL] service\n";
+	"\tadd [--handle=RECORD_HANDLE --psm=PSM --channel=CHANNEL --network=NETWORK] service\n";
 
 static int cmd_add(int argc, char **argv)
 {

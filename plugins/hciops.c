@@ -3,6 +3,7 @@
  *  BlueZ - Bluetooth protocol stack for Linux
  *
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (c) 2010, Code Aurora Forum. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -85,7 +86,8 @@ static void device_devup_setup(int index)
 	if (hci_devinfo(index, &di) < 0)
 		return;
 
-	if (hci_test_bit(HCI_RAW, &di.flags))
+	if (!is_bredr_hci_device_type(di.type) ||
+		hci_test_bit(HCI_RAW, &di.flags))
 		return;
 
 	dd = hci_open_dev(index);
@@ -160,12 +162,17 @@ static void init_device(int index)
 					index, strerror(err), err);
 	}
 
-	/* Set link policy */
-	dr.dev_opt = main_opts.link_policy;
-	if (ioctl(dd, HCISETLINKPOL, (unsigned long) &dr) < 0 &&
-							errno != ENETDOWN) {
-		error("Can't set link policy on hci%d: %s (%d)",
-					index, strerror(errno), errno);
+	/* Set link policy for BR/EDR HCI devices */
+	if (hci_devinfo(index, &di) < 0)
+		goto fail;
+
+	if (is_bredr_hci_device_type(di.type)) {
+		dr.dev_opt = main_opts.link_policy;
+		if (ioctl(dd, HCISETLINKPOL, (unsigned long) &dr) < 0 &&
+								errno != ENETDOWN) {
+			error("Can't set link policy on hci%d: %s (%d)",
+						index, strerror(errno), errno);
+		}
 	}
 
 	/* Start HCI device */
@@ -177,9 +184,6 @@ static void init_device(int index)
 
 	if (hci_devinfo(index, &di) < 0)
 		goto fail;
-
-	if (hci_test_bit(HCI_RAW, &di.flags))
-		goto done;
 
 done:
 	hci_close_dev(dd);
@@ -204,7 +208,8 @@ static void device_devreg_setup(int index)
 
 	devup = hci_test_bit(HCI_UP, &di.flags);
 
-	if (!hci_test_bit(HCI_RAW, &di.flags))
+	if (is_bredr_hci_device_type(di.type) &&
+	    !hci_test_bit(HCI_RAW, &di.flags))
 		manager_register_adapter(index, devup);
 }
 

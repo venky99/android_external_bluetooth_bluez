@@ -2526,7 +2526,8 @@ int adapter_start(struct btd_adapter *adapter)
 	if (hci_devinfo(adapter->dev_id, &di) < 0)
 		return -errno;
 
-	if (hci_test_bit(HCI_RAW, &di.flags)) {
+	if (!is_bredr_hci_device_type(di.type) ||
+	    hci_test_bit(HCI_RAW, &di.flags)) {
 		dev->ignore = 1;
 		return -1;
 	}

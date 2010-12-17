@@ -40,6 +40,7 @@
 #define HCI_UART_H4DS	3
 #define HCI_UART_LL	4
 #define HCI_UART_IBS	5
+#define HCI_UART_ATH3K	6
 
 #define HCI_UART_RAW_DEVICE	0
 

@@ -2,7 +2,7 @@
  *
  *  BlueZ - Bluetooth protocol stack for Linux
  *
- *  Copyright (C) 2000-2001  Qualcomm Incorporated
+ *  Copyright (C) 2000-2001, 2010-2011 Code Aurora Forum.  All rights reserved.
  *  Copyright (C) 2002-2003  Maxim Krasnyansky <maxk@qualcomm.com>
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
  *
@@ -1069,7 +1069,7 @@ static const char *cmd_help =
 	"Usage:\n"
 	"\tcmd <ogf> <ocf> [parameters]\n"
 	"Example:\n"
-	"\tcmd 0x03 0x0013 0x41 0x42 0x43 0x44\n";
+	"\tcmd 0x03 0x0013 0xAA 0x0000BBCC 0xDDEE 0xFF\n";
 
 static void cmd_cmd(int dev_id, int argc, char **argv)
 {
@@ -1079,6 +1079,7 @@ static void cmd_cmd(int dev_id, int argc, char **argv)
 	int i, opt, len, dd;
 	uint16_t ocf;
 	uint8_t ogf;
+	unsigned long val32;
 
 	for_each_opt(opt, cmd_options, NULL) {
 		switch (opt) {
@@ -1106,8 +1107,29 @@ static void cmd_cmd(int dev_id, int argc, char **argv)
 		return;
 	}
 
-	for (i = 2, len = 0; i < argc && len < (int) sizeof(buf); i++, len++)
-		*ptr++ = (uint8_t) strtol(argv[i], NULL, 16);
+	/* Read in command parameters:
+	 * 0x** -> uint8, 0x**** -> uint16, otherwise uint32 */
+	for (i = 2, len = 0; i < argc && len < (int) sizeof(buf); i++) {
+		unsigned long parm_len = strlen(argv[i]);
+		unsigned char *u8_ptr;
+		int k;
+
+		/* Sanity check */
+		if(parm_len < 2) {
+			perror("Incorrect command parameter, should be a hex number\n");
+			exit(EXIT_FAILURE);
+		}
+		val32 = strtol(argv[i], NULL, 16);
+		parm_len -= 2; /* skip 0x */
+		val32 = htobl(val32);
+		u8_ptr = (unsigned char *) &val32;
+
+		parm_len = (parm_len <= 2) ? 1 : ((parm_len <= 4) ? 2: 4);
+		for (k = 0; k < parm_len; k++) {
+			*ptr++ = u8_ptr[k];
+			len++;
+		}
+	}
 
 	dd = hci_open_dev(dev_id);
 	if (dd < 0) {

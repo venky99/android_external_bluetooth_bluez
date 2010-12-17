@@ -2,7 +2,7 @@
  *
  *  BlueZ - Bluetooth protocol stack for Linux
  *
- *  Copyright (C) 2000-2001  Qualcomm Incorporated
+ *  Copyright (c) 2000-2001, 2010-2011  Code Aurora Forum. All rights reserved.
  *  Copyright (C) 2002-2003  Maxim Krasnyansky <maxk@qualcomm.com>
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
  *
@@ -167,6 +167,11 @@ static inline void hci_clear_bit(int nr, void *addr)
 static inline int hci_test_bit(int nr, void *addr)
 {
 	return *((uint32_t *) addr + (nr >> 5)) & (1 << (nr & 31));
+}
+
+static inline int is_bredr_hci_device_type(uint8_t type)
+{
+  return (type >> 4) == HCI_BREDR;
 }
 
 /* HCI filter tools */

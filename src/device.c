@@ -911,13 +911,36 @@ static DBusMessage *get_service_attribute_value(DBusConnection *conn,
 		goto fail;
 	}
 
-	attr_data = sdp_data_get(rec, attrId);
+	if (attrId == SDP_ATTR_PROTO_DESC_LIST) {
+		attr_data = sdp_data_get(rec, attrId);
 
-	if (attr_data == NULL) {
-		error("attr in null");
+		if (attr_data == NULL) {
+			error("attr in null");
+			goto fail;
+		}
+
+		return get_service_attribute_value_reply(msg, conn, attr_data);
+	} else if (attrId == SDP_ATTR_GOEP_L2CAP_PSM) {
+		/* Failure expected if L2CAP PSM is not present, e.g., for
+			 devices not supporting OBEX-over-L2CAP */
+		int psm = -1;
+
+		DBusMessage *reply = dbus_message_new_method_return(msg);
+		if (!reply) {
+			error("unable to allocate reply message!");
+			goto fail;
+		}
+
+		sdp_get_int_attr(rec, attrId, &psm);
+
+		dbus_message_append_args(reply, DBUS_TYPE_INT32, &psm, DBUS_TYPE_INVALID);
+
+		return reply;
+	} else {
+		error("unknown attrId = 0x%X", attrId);
 		goto fail;
 	}
-	return get_service_attribute_value_reply(msg, conn, attr_data);
+
 fail:
 	return g_dbus_create_error(msg, ERROR_INTERFACE ".Failed",
 					"GetServiceAttribute Failed");

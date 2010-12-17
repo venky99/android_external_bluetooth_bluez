@@ -2,7 +2,7 @@
  *
  *  BlueZ - Bluetooth protocol stack for Linux
  *
- *  Copyright (C) 2000-2001  Qualcomm Incorporated
+ *  Copyright (C) 2000-2001, 2010-2011 Code Aurora Forum.  All rights reserved.
  *  Copyright (C) 2002-2003  Maxim Krasnyansky <maxk@qualcomm.com>
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
  *
@@ -69,6 +69,11 @@ struct bt_security {
 #define BT_SECURITY_HIGH	3
 
 #define BT_DEFER_SETUP	7
+
+#define BT_AMP_POLICY	8
+#define BT_AMP_POLICY_REQUIRE_BR_EDR	0
+#define BT_AMP_POLICY_PREFER_AMP		1
+#define BT_AMP_POLICY_PREFER_BR_EDR		2
 
 /* Connection and socket states */
 enum {
