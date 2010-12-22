@@ -4,7 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
- *
+ *  Copyright (C) 2010, Code Aurora Forum. All rights reserved
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -637,8 +637,8 @@ void hcid_dbus_inquiry_result(bdaddr_t *local, bdaddr_t *peer, uint32_t class,
 	dev = adapter_search_found_devices(adapter, &match);
 	if (dev) {
 		adapter_update_found_devices(adapter, peer, rssi, class,
-						NULL, NULL, dev->legacy,
-						NAME_NOT_REQUIRED);
+						NULL, NULL, legacy,
+						NAME_NOT_REQUIRED, data);
 		return;
 	}
 
@@ -689,7 +689,7 @@ void hcid_dbus_inquiry_result(bdaddr_t *local, bdaddr_t *peer, uint32_t class,
 
 	/* add in the list to track name sent/pending */
 	adapter_update_found_devices(adapter, peer, rssi, class, name, alias,
-					legacy, name_status);
+					legacy, name_status, data);
 
 	g_free(name);
 	g_free(alias);
@@ -765,7 +765,7 @@ void hcid_dbus_remote_name(bdaddr_t *local, bdaddr_t *peer, uint8_t status,
 	if (dev_info) {
 		g_free(dev_info->name);
 		dev_info->name = g_strdup(name);
-		adapter_emit_device_found(adapter, dev_info);
+		adapter_emit_device_found(adapter, dev_info, NULL);
 	}
 
 	if (device)

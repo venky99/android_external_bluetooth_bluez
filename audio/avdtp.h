@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2010, Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -95,6 +96,12 @@ typedef enum {
 struct avdtp_service_capability {
 	uint8_t category;
 	uint8_t length;
+	uint8_t data[0];
+} __attribute__ ((packed));
+
+struct avdtp_content_protection_capability {
+	uint8_t cp_type_lsb;
+	uint8_t cp_type_msb;
 	uint8_t data[0];
 } __attribute__ ((packed));
 
@@ -232,6 +239,9 @@ uint8_t avdtp_get_type(struct avdtp_remote_sep *sep);
 struct avdtp_service_capability *avdtp_get_codec(struct avdtp_remote_sep *sep);
 
 gboolean avdtp_get_delay_reporting(struct avdtp_remote_sep *sep);
+struct avdtp_service_capability *avdtp_get_protection(struct avdtp_stream *stream);
+
+struct avdtp_service_capability *avdtp_get_remote_sep_protection(struct avdtp_remote_sep *sep);
 
 struct avdtp_stream *avdtp_get_stream(struct avdtp_remote_sep *sep);
 
@@ -256,6 +266,10 @@ gboolean avdtp_stream_has_capability(struct avdtp_stream *stream,
 				struct avdtp_service_capability *cap);
 gboolean avdtp_stream_has_capabilities(struct avdtp_stream *stream,
 					GSList *caps);
+
+struct avdtp_remote_sep *avdtp_stream_get_remote_sep(
+						struct avdtp_stream *stream);
+
 
 unsigned int avdtp_add_state_cb(avdtp_session_state_cb cb, void *user_data);
 

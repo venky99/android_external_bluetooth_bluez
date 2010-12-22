@@ -7,7 +7,7 @@
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
  *  Copyright (C) 2002-2003  Stephen Crane <steve.crane@rococosoft.com>
  *  Copyright (C) 2002-2003  Jean Tourrilhes <jt@hpl.hp.com>
- *
+ *  Copyright (c) 2010, Code Aurora Forum.  All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -788,6 +788,31 @@ static int set_attrib(sdp_session_t *sess, uint32_t handle, uint16_t attrib, cha
 			attrib, value_int, handle);
 
 		sdp_attr_add_new(rec, attrib, SDP_UINT32, &value_int);
+	} else if (!strncasecmp(value, "16:0x", 5)) {
+		/* Int 16 bit */
+		uint16_t value_int;
+		value_int = strtoul(value + 5, NULL, 16);
+		printf("Adding attrib 0x%X int16 0x%X to record 0x%X\n",
+			attrib, value_int, handle);
+
+		sdp_attr_add_new(rec, attrib, SDP_UINT16, &value_int);
+	} else if (!strncasecmp(value, "8:0x", 4)) {
+		/* Int 8 bit */
+		uint8_t value_int;
+		value_int = strtoul(value + 4, NULL, 16);
+		printf("Adding attrib 0x%X int8 0x%X to record 0x%X\n",
+			attrib, value_int, handle);
+
+		sdp_attr_add_new(rec, attrib, SDP_UINT8, &value_int);
+	} else if (!strncasecmp(value, "url:", 4)) {
+		/* Strip off the "url:" indicator */
+		char *value_url;
+		value_url = value + 4;
+		/* URL type String */
+		printf("Adding attrib 0x%X url string \"%s\" to record 0x%X\n",
+			attrib, value_url, handle);
+		/* Add/Update our attributes to the record */
+		sdp_attr_add_new(rec, attrib, SDP_URL_STR8, value_url);
 	} else {
 		/* String */
 		printf("Adding attrib 0x%X string \"%s\" to record 0x%X\n",
@@ -870,6 +895,8 @@ static int set_attribseq(sdp_session_t *session, uint32_t handle, uint16_t attri
 	void **allocArray;
 	uint8_t uuid16 = SDP_UUID16;
 	uint8_t uint32 = SDP_UINT32;
+	uint8_t uint16 = SDP_UINT16;
+	uint8_t uint8 = SDP_UINT8;
 	uint8_t str8 = SDP_TEXT_STR8;
 	int i, ret = 0;
 
@@ -909,6 +936,26 @@ static int set_attribseq(sdp_session_t *session, uint32_t handle, uint16_t attri
 
 			printf("Adding int 0x%X to record 0x%X\n", *value_int, handle);
 			dtdArray[i] = &uint32;
+			valueArray[i] = value_int;
+		} else if (!strncasecmp(argv[i], "16:0x", 5)) {
+			/* Int 16 bit */
+			uint32_t *value_int = (uint32_t *) malloc(sizeof(int));
+			allocArray[i] = value_int;
+			*value_int = strtoul((argv[i]) + 5, NULL, 16);
+
+			printf("Adding int16 0x%X to record 0x%X\n", *value_int, handle);
+			dtdArray[i] = &uint16;
+			valueArray[i] = value_int;
+		} else if (!strncasecmp(argv[i], "8:0x", 4)) {
+			/* Int 8 bit*/
+			uint32_t *value_int = (uint32_t *) malloc(sizeof(int));
+			allocArray[i] = value_int;
+			*value_int = strtoul((argv[i]) + 4, NULL, 16);
+
+			printf("Adding int8 0x%X to record 0x%X\n", *value_int,
+				handle);
+
+			dtdArray[i] = &uint8;
 			valueArray[i] = value_int;
 		} else {
 			/* String */
@@ -1496,7 +1543,11 @@ static int add_headset_ag(sdp_session_t *session, svc_info_t *si)
 	sdp_set_service_classes(&record, svclass_id);
 
 	sdp_uuid16_create(&profile.uuid, HEADSET_PROFILE_ID);
+#ifdef ANDROID
+	profile.version = 0x0102;
+#else
 	profile.version = 0x0100;
+#endif
 	pfseq = sdp_list_append(0, &profile);
 	sdp_set_profile_descs(&record, pfseq);
 

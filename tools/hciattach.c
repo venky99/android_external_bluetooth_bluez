@@ -2,9 +2,9 @@
  *
  *  BlueZ - Bluetooth protocol stack for Linux
  *
- *  Copyright (C) 2000-2001  Qualcomm Incorporated
  *  Copyright (C) 2002-2003  Maxim Krasnyansky <maxk@qualcomm.com>
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (c) 2000-2001, 2010, Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -1070,6 +1070,10 @@ struct uart_t uart[] = {
 
 	/* Broadcom BCM2035 */
 	{ "bcm2035",    0x0A5C, 0x2035, HCI_UART_H4,   115200, 460800, FLOW_CTL, NULL, bcm2035  },
+
+	/* QUALCOMM BTS */
+	{ "qualcomm",   0x0000, 0x0000, HCI_UART_H4,   115200, 115200, FLOW_CTL, NULL, NULL     },
+	{ "qualcomm-ibs", 0x0000, 0x0000, HCI_UART_IBS,  115200, 115200, FLOW_CTL, NULL, NULL     },
 
 	{ NULL, 0 }
 };

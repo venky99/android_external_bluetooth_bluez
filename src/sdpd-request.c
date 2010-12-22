@@ -6,6 +6,7 @@
  *  Copyright (C) 2002-2003  Maxim Krasnyansky <maxk@qualcomm.com>
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
  *  Copyright (C) 2002-2003  Stephen Crane <steve.crane@rococosoft.com>
+ *  Copyright (C) 2010       Code Aurora Forum.  All Rights Reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -367,7 +368,7 @@ static int service_search_req(sdp_req_t *req, sdp_buf_t *buf)
 	mlen = scanned + sizeof(uint16_t) + 1;
 	// ensure we don't read past buffer
 	if (plen < mlen || plen != mlen + *(uint8_t *)(pdata+sizeof(uint16_t))) {
-		status = SDP_INVALID_SYNTAX;
+		status = SDP_INVALID_PDU_SIZE;
 		goto done;
 	}
 
@@ -667,7 +668,7 @@ static int service_attr_req(sdp_req_t *req, sdp_buf_t *buf)
 	mlen = scanned + sizeof(uint32_t) + sizeof(uint16_t) + 1;
 	// ensure we don't read past buffer
 	if (plen < mlen || plen != mlen + *(uint8_t *)pdata) {
-		status = SDP_INVALID_SYNTAX;
+		status = SDP_INVALID_PDU_SIZE;
 		goto done;
 	}
 
@@ -682,6 +683,15 @@ static int service_attr_req(sdp_req_t *req, sdp_buf_t *buf)
 
 	SDPDBG("SvcRecHandle : 0x%x", handle);
 	SDPDBG("max_rsp_size : %d", max_rsp_size);
+
+	/*
+	 * Check that max_rsp_size is within valid range
+	 * a minimum size of 0x0007 has to be used for data field
+	 */
+	if (max_rsp_size < 0x0007) {
+		status = SDP_INVALID_SYNTAX;
+		goto done;
+	}
 
 	/*
 	 * Calculate Attribute size acording to MTU
@@ -818,7 +828,7 @@ static int service_search_attr_req(sdp_req_t *req, sdp_buf_t *buf)
 
 	plen = ntohs(((sdp_pdu_hdr_t *)(req->buf))->plen);
 	if (plen < totscanned || plen != totscanned + *(uint8_t *)pdata) {
-		status = SDP_INVALID_SYNTAX;
+		status = SDP_INVALID_PDU_SIZE;
 		goto done;
 	}
 

@@ -62,6 +62,7 @@ LOCAL_SHARED_LIBRARIES := \
 LOCAL_STATIC_LIBRARIES := \
 	libglib_static \
 	libbuiltinplugin \
+	libglib_static \
 	libgdbus_static
 
 LOCAL_MODULE:=libbluetoothd

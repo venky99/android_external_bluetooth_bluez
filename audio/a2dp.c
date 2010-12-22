@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2010, Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -51,6 +52,9 @@
 #define SUSPEND_TIMEOUT 5
 #define RECONFIGURE_TIMEOUT 500
 
+/* Content protection types */
+#define CP_TYPE_SCMS_T 0x0002
+
 #ifndef MIN
 # define MIN(x, y) ((x) < (y) ? (x) : (y))
 #endif
@@ -84,6 +88,7 @@ struct a2dp_setup {
 	struct audio_device *dev;
 	struct avdtp *session;
 	struct a2dp_sep *sep;
+        struct avdtp_remote_sep *rsep;
 	struct avdtp_stream *stream;
 	struct avdtp_error *err;
 	GSList *client_caps;
@@ -350,6 +355,8 @@ static gboolean sbc_getcap_ind(struct avdtp *session, struct avdtp_local_sep *se
 {
 	struct a2dp_sep *a2dp_sep = user_data;
 	struct avdtp_service_capability *media_transport, *media_codec;
+	struct avdtp_service_capability *media_scms_t;
+	struct avdtp_content_protection_capability scms_t_cap;
 	struct sbc_codec_cap sbc_cap;
 
 	if (a2dp_sep->type == AVDTP_SEP_TYPE_SINK)
@@ -407,6 +414,13 @@ static gboolean sbc_getcap_ind(struct avdtp *session, struct avdtp_local_sep *se
 								NULL, 0);
 		*caps = g_slist_append(*caps, delay_reporting);
 	}
+	memset(&scms_t_cap, 0, sizeof(scms_t_cap));
+	scms_t_cap.cp_type_lsb = (CP_TYPE_SCMS_T & 0xFF);
+	scms_t_cap.cp_type_msb = (CP_TYPE_SCMS_T >> 8) & 0xFF;
+	media_scms_t = avdtp_service_cap_new(AVDTP_CONTENT_PROTECTION,
+						&scms_t_cap, 2);
+
+	*caps = g_slist_append(*caps, media_scms_t);
 
 	return TRUE;
 }
@@ -459,6 +473,8 @@ static gboolean mpeg_getcap_ind(struct avdtp *session,
 {
 	struct a2dp_sep *a2dp_sep = user_data;
 	struct avdtp_service_capability *media_transport, *media_codec;
+	struct avdtp_service_capability *media_scms_t;
+	struct avdtp_content_protection_capability scms_t_cap;
 	struct mpeg_codec_cap mpeg_cap;
 
 	if (a2dp_sep->type == AVDTP_SEP_TYPE_SINK)
@@ -505,6 +521,13 @@ static gboolean mpeg_getcap_ind(struct avdtp *session,
 								NULL, 0);
 		*caps = g_slist_append(*caps, delay_reporting);
 	}
+	memset(&scms_t_cap, 0, sizeof(scms_t_cap));
+	scms_t_cap.cp_type_lsb = (CP_TYPE_SCMS_T & 0xFF);
+	scms_t_cap.cp_type_msb = (CP_TYPE_SCMS_T >> 8) & 0xFF;
+	media_scms_t = avdtp_service_cap_new(AVDTP_CONTENT_PROTECTION,
+						&scms_t_cap, 2);
+
+	*caps = g_slist_append(*caps, media_scms_t);
 
 	return TRUE;
 }
@@ -792,6 +815,12 @@ static gboolean a2dp_reconfigure(gpointer data)
 					codec_cap->media_type,
 					codec_cap->media_codec_type,
 					&lsep, &rsep);
+
+        if (setup->rsep) {
+          rsep = setup->rsep;
+	  setup->rsep = NULL;
+        }
+
 	if (posix_err < 0) {
 		error("No matching ACP and INT SEPs found");
 		goto failed;
@@ -835,8 +864,10 @@ static void close_cfm(struct avdtp *session, struct avdtp_local_sep *sep,
 		return;
 	}
 
-	if (setup->reconfigure)
+	if (setup->reconfigure) {
+		setup->rsep = avdtp_stream_get_remote_sep(stream);
 		g_timeout_add(RECONFIGURE_TIMEOUT, a2dp_reconfigure, setup);
+	}
 }
 
 static gboolean abort_ind(struct avdtp *session, struct avdtp_local_sep *sep,

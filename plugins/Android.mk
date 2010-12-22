@@ -8,6 +8,7 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
 	hciops.c \
+	service.c
 
 LOCAL_CFLAGS:= \
 	-DVERSION=\"4.69\" \
