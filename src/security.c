@@ -5,6 +5,7 @@
  *  Copyright (C) 2000-2001  Qualcomm Incorporated
  *  Copyright (C) 2002-2003  Maxim Krasnyansky <maxk@qualcomm.com>
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2011, Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -920,9 +921,23 @@ static inline void auth_complete(int dev, bdaddr_t *sba, void *ptr)
 {
 	evt_auth_complete *evt = ptr;
 	bdaddr_t dba;
+	struct btd_adapter *adapter;
+	struct btd_device *device;
 
 	if (get_bdaddr(dev, sba, btohs(evt->handle), &dba) < 0)
 		return;
+
+	if (evt->status == 0x06) {
+		DBG("PIN or Key missing with auth complete");
+		if (!get_adapter_and_device(sba, &dba, &adapter, &device, FALSE)) {
+			device = NULL;
+			DBG("Device is null");
+			return;
+		}
+		device_remove_bonding(device);
+		DBG("Completed device remove bonding");
+		return;
+	}
 
 	hcid_dbus_bonding_process_complete(sba, &dba, evt->status);
 }
