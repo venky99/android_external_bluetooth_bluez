@@ -4,7 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
- *  Copyright (C) 2010, Code Aurora Forum. All rights reserved
+ *  Copyright (C) 2010,2011 Code Aurora Forum. All rights reserved
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -1706,10 +1706,18 @@ static DBusMessage *remove_device(DBusConnection *conn, DBusMessage *msg,
 				"Device does not exist");
 	device = l->data;
 
-	if (device_is_temporary(device) || device_is_busy(device))
-		return g_dbus_create_error(msg,
-				ERROR_INTERFACE ".DoesNotExist",
-				"Device creation in progress");
+	if (device_is_temporary(device) || device_is_busy(device)) {
+		DBG("Device is temporary");
+		if (device_is_connected(device)) {
+			DBG("Disconnecting the device");
+			device_request_disconnect(device, msg);
+			return NULL;
+		} else {
+			return g_dbus_create_error(msg,
+					ERROR_INTERFACE ".DoesNotExist",
+					"Device creation in progress");
+		}
+	}
 
 	device_set_temporary(device, TRUE);
 
