@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2011, Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -63,11 +64,18 @@
 #define DEFAULT_XML_BUF_SIZE	1024
 #define DISCONNECT_TIMER	2
 #define DISCOVERY_TIMER		2
+#define SDP_TIMEOUT		30
 
 struct btd_driver_data {
 	guint id;
 	struct btd_device_driver *driver;
 	void *priv;
+};
+
+struct sdp_timeout_data {
+	struct btd_adapter *adapter;
+	bdaddr_t	dst;
+	struct browse_req *req;
 };
 
 struct btd_disconnect_data {
@@ -1658,11 +1666,42 @@ static void init_browse(struct browse_req *req, gboolean reverse)
 						l->data);
 }
 
+static gboolean sdp_timeout(struct sdp_timeout_data *sdata)
+{
+	struct btd_device *device;
+	struct btd_adapter *adapter = sdata->adapter;
+	bdaddr_t src;
+	char peer_addr[18];
+	const char *paddr =  peer_addr;
+
+	DBG("sdp_timeout");
+	ba2str(&sdata->dst, peer_addr);
+	device = adapter_find_device(adapter, paddr);
+	if (device != NULL){
+		if (device->browse == NULL) {
+			DBG("SDP is not in progress");
+			return FALSE;
+		}
+	} else {
+		return FALSE;
+	}
+	DBG("Sdp in progress and cancelling it");
+
+	adapter_get_address(adapter, &src);
+
+	bt_cancel_discovery(&src, &sdata->dst);
+	DBG("sdp_timeout exit");
+	browse_cb(NULL, -ETIMEDOUT, (void *)sdata->req);
+	g_free(sdata);
+	return FALSE;
+}
+
 int device_browse(struct btd_device *device, DBusConnection *conn,
 			DBusMessage *msg, uuid_t *search, gboolean reverse)
 {
 	struct btd_adapter *adapter = device->adapter;
 	struct browse_req *req;
+	struct sdp_timeout_data *sdata;
 	bdaddr_t src;
 	uuid_t uuid;
 	bt_callback_t cb;
@@ -1710,6 +1749,14 @@ int device_browse(struct btd_device *device, DBusConnection *conn,
 		device->browse = NULL;
 		browse_request_free(req);
 	}
+	DBG("Adding sdp timeout : %d\n",SDP_TIMEOUT);
+	sdata = g_new0(struct sdp_timeout_data, 1);
+	sdata->adapter = adapter;
+	bacpy(&sdata->dst, &device->bdaddr);
+	sdata->req = req;
+	g_timeout_add_seconds(SDP_TIMEOUT,
+					(GSourceFunc) sdp_timeout,
+					sdata);
 
 	return err;
 }
