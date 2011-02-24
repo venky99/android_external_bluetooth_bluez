@@ -2180,7 +2180,7 @@ static struct avdtp *avdtp_get_internal(const bdaddr_t *src, const bdaddr_t *dst
 	 * but just setting of the initial state */
 	session->state = AVDTP_SESSION_STATE_DISCONNECTED;
 	session->auto_dc = TRUE;
-
+	session->pending_open = NULL;
 	session->version = get_version(session);
 
 	server->sessions = g_slist_append(server->sessions, session);
