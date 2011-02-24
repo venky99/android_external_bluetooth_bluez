@@ -1015,13 +1015,16 @@ sdp_record_t *find_record_in_list(sdp_list_t *recs, const char *uuid)
 	for (seq = recs; seq; seq = seq->next) {
 		sdp_record_t *rec = (sdp_record_t *) seq->data;
 		sdp_list_t *svcclass = NULL;
+		sdp_list_t *svcclass_ext = NULL;
 		char *uuid_str;
 
 		if (sdp_get_service_classes(rec, &svcclass) < 0)
 			continue;
 
 		/* Extract the uuid */
-		uuid_str = bt_uuid2string(svcclass->data);
+		svcclass_ext = svcclass;
+extract_uuid:
+		uuid_str = bt_uuid2string(svcclass_ext->data);
 		if (!uuid_str)
 			continue;
 
@@ -1030,6 +1033,9 @@ sdp_record_t *find_record_in_list(sdp_list_t *recs, const char *uuid)
 			free(uuid_str);
 			return rec;
 		}
+
+		if(svcclass_ext = svcclass_ext->next)
+			goto extract_uuid;
 
 		sdp_list_free(svcclass, free);
 		free(uuid_str);
@@ -1237,3 +1243,4 @@ int write_blocked(const bdaddr_t *local, const bdaddr_t *remote,
 
 	return textfile_caseput(filename, addr, "");
 }
+

@@ -869,20 +869,40 @@ static DBusMessage *get_service_attribute_value_reply(DBusMessage *msg, DBusConn
 		return NULL;
 	sdp_data_t *curr;
 	sdp_list_t *ap = 0;
-	for (; attr; attr = attr->next) {
-		sdp_list_t *pds = 0;
-		for (curr = attr->val.dataseq; curr; curr = curr->next)
-			pds = sdp_list_append(pds, curr->val.dataseq);
-		ap = sdp_list_append(ap, pds);
+	const char * supported_formats;
+
+	DBG("Attribute id: 0x%04x", attr->attrId );
+	switch(attr->attrId)
+	{
+		case SDP_ATTR_ADD_PROTO_DESC_LIST:
+			attr = attr->val.dataseq;
+		case SDP_ATTR_PROTO_DESC_LIST:
+			for (; attr; attr = attr->next)
+			{
+				sdp_list_t *pds = 0;
+				for (curr = attr->val.dataseq; curr; curr = curr->next)
+				{
+					pds = sdp_list_append(pds, curr->val.dataseq);
+				}
+				ap = sdp_list_append(ap, pds);
+			}
+			int ch = sdp_get_proto_port(ap, RFCOMM_UUID);
+			sdp_list_foreach(ap, (sdp_list_func_t) sdp_list_free, NULL);
+			sdp_list_free(ap, NULL);
+			ap = NULL;
+			DBG("RFCOMM Channel: 0x%x", ch);
+			dbus_message_append_args(reply, DBUS_TYPE_INT32, &ch, DBUS_TYPE_INVALID);
+			break;
+		case SDP_ATTR_BPP_SUPPORTED_DOC_FORMAT:
+			supported_formats = attr->val.str;
+			DBG("Supported Document Formats: %s", supported_formats);
+			dbus_message_append_args(reply, DBUS_TYPE_STRING, &supported_formats,
+				DBUS_TYPE_INVALID);
+			break;
+		default:
+			DBG("The attribute id is currently not supported!!");
+			break;
 	}
-
-	int ch = sdp_get_proto_port(ap, RFCOMM_UUID);
-	sdp_list_foreach(ap, (sdp_list_func_t) sdp_list_free, NULL);
-	sdp_list_free(ap, NULL);
-	ap = NULL;
-
-	dbus_message_append_args(reply, DBUS_TYPE_INT32, &ch, DBUS_TYPE_INVALID);
-
 	return reply;
 }
 
@@ -1470,6 +1490,7 @@ static void update_services(struct browse_req *req, sdp_list_t *recs)
 	for (seq = recs; seq; seq = seq->next) {
 		sdp_record_t *rec = (sdp_record_t *) seq->data;
 		sdp_list_t *svcclass = NULL;
+		sdp_list_t *svcclass2 = NULL;
 		gchar *profile_uuid;
 		GSList *l;
 
@@ -1526,6 +1547,8 @@ static void update_services(struct browse_req *req, sdp_list_t *recs)
 		req->records = sdp_list_append(req->records,
 							sdp_copy_record(rec));
 
+		svcclass2 = svcclass;
+append_uuid:
 		l = g_slist_find_custom(device->uuids, profile_uuid,
 							(GCompareFunc) strcmp);
 		if (!l)
@@ -1539,6 +1562,13 @@ static void update_services(struct browse_req *req, sdp_list_t *recs)
 			g_free(profile_uuid);
 		}
 
+		if(svcclass2 = svcclass2->next){
+			profile_uuid = bt_uuid2string(svcclass2->data);
+			if (profile_uuid) {
+				DBG("update_services: uuid ext - %s", profile_uuid );
+				goto append_uuid;
+			}
+		}
 		sdp_list_free(svcclass, free);
 	}
 }
