@@ -2019,7 +2019,7 @@ static int add_mas(sdp_session_t *session, svc_info_t *si)
 	sdp_profile_desc_t profile[1];
 	sdp_list_t *aproto, *proto[3];
 	sdp_record_t record;
-	uint8_t u8_val = si->channel ? si->channel : 10;
+	uint8_t u8 = si->channel ? si->channel : 10;
 	sdp_data_t *channel;
 	int ret = 0;
 
@@ -2040,7 +2040,7 @@ static int add_mas(sdp_session_t *session, svc_info_t *si)
 
 	sdp_uuid16_create(&rfcomm_uuid, RFCOMM_UUID);
 	proto[1] = sdp_list_append(0, &rfcomm_uuid);
-	channel = sdp_data_alloc(SDP_UINT8, &u8_val);
+	channel = sdp_data_alloc(SDP_UINT8, &u8);
 	proto[1] = sdp_list_append(proto[1], channel);
 	apseq = sdp_list_append(apseq, proto[1]);
 
@@ -2057,7 +2057,7 @@ static int add_mas(sdp_session_t *session, svc_info_t *si)
 	sdp_set_profile_descs(&record, pfseq);
 
 	masid = 0x0;
-	sdp_attr_add_new(&record, SDP_ATTR_MAS_INSTANCE_ID, SDP_UINT16,
+	sdp_attr_add_new(&record, SDP_ATTR_MAS_INSTANCE_ID, SDP_UINT8,
 							&masid);
 
 	sprtd_msg = 0x0F;
