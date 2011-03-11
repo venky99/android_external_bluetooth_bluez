@@ -2181,11 +2181,12 @@ static DBusMessage *set_link_timeout(DBusConnection *conn,
 					DBusMessage *msg, void *data)
 {
 	struct btd_adapter *adapter = data;
-        struct btd_device *device;
+	struct btd_device *device;
 	const char *path;
 	GSList *l;
 	uint32_t num_slots;
-        int dd, err;
+	int dd, err;
+	uint16_t handle;
 
 	if (!dbus_message_get_args(msg, NULL,
 			DBUS_TYPE_OBJECT_PATH, &path,
@@ -2207,8 +2208,14 @@ static DBusMessage *set_link_timeout(DBusConnection *conn,
 		goto fail;
 	}
 
+	err = device_get_handle(device, dd, &handle);
+	if (err  <  0) {
+		err = -errno;
+		goto fail;
+	}
+
 	err = hci_write_link_supervision_timeout(dd,
-			htobs(device_get_handle(device)), htobs(num_slots), 1000);
+			htobs(handle), htobs(num_slots), 1000);
 	hci_close_dev(dd);
 
 	if (err < 0) {

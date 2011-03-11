@@ -948,9 +948,25 @@ void device_remove_connection(struct btd_device *device, DBusConnection *conn)
 					DBUS_TYPE_BOOLEAN, &device->connected);
 }
 
-uint16_t device_get_handle(struct btd_device *device)
+int device_get_handle(struct btd_device *device, int dd, uint16_t *handle)
 {
-	return device->handle;
+	struct hci_conn_info_req *cr;
+	int err = 0;
+
+	cr = g_malloc0(sizeof(*cr) + sizeof(struct hci_conn_info));
+
+	if(cr == NULL) {
+		return  -ENOMEM;
+	}
+	cr->type = ACL_LINK;
+	bacpy(&cr->bdaddr, &device->bdaddr);
+
+	err = ioctl(dd, HCIGETCONNINFO, cr);
+	if (! err)
+		*handle = cr->conn_info->handle;
+	g_free(cr);
+
+	return err;
 }
 
 guint device_add_disconnect_watch(struct btd_device *device,
