@@ -85,6 +85,7 @@ enum {
 #define HCIGETCONNLIST	_IOR('H', 212, int)
 #define HCIGETCONNINFO	_IOR('H', 213, int)
 #define HCIGETAUTHINFO	_IOR('H', 215, int)
+#define HCISETAUTHINFO	_IOR('H', 216, int)
 
 #define HCISETRAW	_IOW('H', 220, int)
 #define HCISETSCAN	_IOW('H', 221, int)

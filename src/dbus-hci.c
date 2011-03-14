@@ -4,7 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
- *  Copyright (C) 2010, Code Aurora Forum. All rights reserved
+ *  Copyright (C) 2010-2011 Code Aurora Forum. All rights reserved
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -429,6 +429,40 @@ static int get_auth_requirements(bdaddr_t *local, bdaddr_t *remote,
 
 	if (auth)
 		*auth = req.type;
+
+	return 0;
+}
+
+static int set_auth_requirements(bdaddr_t *local, bdaddr_t *remote,
+							uint8_t *auth)
+{
+	struct hci_auth_info_req req;
+	char addr[18];
+	int err, dd, dev_id;
+
+	ba2str(local, addr);
+
+	dev_id = hci_devid(addr);
+	if (dev_id < 0)
+		return dev_id;
+
+	dd = hci_open_dev(dev_id);
+	if (dd < 0)
+		return dd;
+
+	memset(&req, 0, sizeof(req));
+	bacpy(&req.bdaddr, remote);
+	req.type = *auth;
+
+	err = ioctl(dd, HCISETAUTHINFO, (unsigned long) &req);
+	if (err < 0) {
+		DBG("HCISETAUTHINFO failed: %s (%d)",
+					strerror(errno), errno);
+		hci_close_dev(dd);
+		return err;
+	}
+
+	hci_close_dev(dd);
 
 	return 0;
 }
@@ -1137,6 +1171,10 @@ int hcid_dbus_get_io_cap(bdaddr_t *local, bdaddr_t *remote)
 					(device_get_auth(device) & 0x01) &&
 					agent_cap != 0x03)
 			auth |= 0x01;
+
+		/* Update the modified authorization level in the
+		 * kernel space. */
+		set_auth_requirements(local, remote, &auth);
 	}
 
 	DBG("final authentication requirement is 0x%02x", auth);
