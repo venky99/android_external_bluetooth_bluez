@@ -33,9 +33,14 @@ extern "C" {
 #endif
 
 #include <stdint.h>
-#include <cutils/sockets.h>
 
+#ifdef ANDROID
+#include <cutils/sockets.h>
 #define SDP_UNIX_PATH ANDROID_SOCKET_DIR"/bluetooth"
+#else
+#define SDP_UNIX_PATH "/var/run/sdp"
+#endif
+
 #define SDP_RESPONSE_TIMEOUT	20
 #define SDP_REQ_BUFFER_SIZE	2048
 #define SDP_RSP_BUFFER_SIZE	65535

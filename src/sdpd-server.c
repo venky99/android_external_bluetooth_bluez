@@ -34,7 +34,10 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+
+#ifdef ANDROID
 #include <cutils/sockets.h>
+#endif
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/l2cap.h>
