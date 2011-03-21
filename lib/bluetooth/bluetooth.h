@@ -70,7 +70,7 @@ struct bt_security {
 
 #define BT_DEFER_SETUP	7
 
-#define BT_AMP_POLICY	8
+#define BT_AMP_POLICY	9
 #define BT_AMP_POLICY_REQUIRE_BR_EDR	0
 #define BT_AMP_POLICY_PREFER_AMP		1
 #define BT_AMP_POLICY_PREFER_BR_EDR		2
