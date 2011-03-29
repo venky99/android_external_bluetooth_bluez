@@ -357,7 +357,7 @@ static void send_key(int fd, uint16_t key, int pressed)
 	send_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
-static void handle_panel_passthrough(struct control *control,
+static gboolean handle_panel_passthrough(struct control *control,
 					const unsigned char *operands,
 					int operand_count)
 {
@@ -365,7 +365,7 @@ static void handle_panel_passthrough(struct control *control,
 	int pressed, i;
 
 	if (operand_count == 0)
-		return;
+		return TRUE;
 
 	if (operands[0] & 0x80) {
 		status = "released";
@@ -384,11 +384,11 @@ static void handle_panel_passthrough(struct control *control,
 				DBG("AVRCP: Ignoring Pause key - pressed");
 				if (!(key_quirks & QUIRK_NO_RELEASE))
 					control->ignore_pause = TRUE;
-				return;
+				return TRUE;
 			} else if (!pressed && control->ignore_pause) {
 				DBG("AVRCP: Ignoring Pause key - released");
 				control->ignore_pause = FALSE;
-				return;
+				return TRUE;
 			}
 		}
 	}
@@ -420,9 +420,12 @@ static void handle_panel_passthrough(struct control *control,
 		break;
 	}
 
-	if (key_map[i].name == NULL)
+	if (key_map[i].name == NULL) {
 		DBG("AVRCP: unknown button 0x%02X %s",
 						operands[0] & 0x7F, status);
+		return FALSE;
+	}
+	return TRUE;
 }
 
 static void avctp_disconnected(struct audio_device *dev)
@@ -577,9 +580,12 @@ static gboolean control_cb(GIOChannel *chan, GIOCondition cond,
 			avrcp->code == CTYPE_CONTROL &&
 			avrcp->subunit_type == SUBUNIT_PANEL &&
 			avrcp->opcode == OP_PASSTHROUGH) {
-		handle_panel_passthrough(control, operands, operand_count);
+		gboolean handled = handle_panel_passthrough(control, operands, operand_count);
 		avctp->cr = AVCTP_RESPONSE;
-		avrcp->code = CTYPE_ACCEPTED;
+		if (handled == TRUE)
+			avrcp->code = CTYPE_ACCEPTED;
+		else
+			avrcp->code = CTYPE_REJECTED;
 	} else if (avctp->cr == AVCTP_COMMAND &&
 			avrcp->code == CTYPE_STATUS &&
 			(avrcp->opcode == OP_UNITINFO
