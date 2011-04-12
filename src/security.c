@@ -936,7 +936,6 @@ static inline void auth_complete(int dev, bdaddr_t *sba, void *ptr)
 		}
 		device_remove_bonding(device);
 		DBG("Completed device remove bonding");
-		return;
 	}
 
 	hcid_dbus_bonding_process_complete(sba, &dba, evt->status);
