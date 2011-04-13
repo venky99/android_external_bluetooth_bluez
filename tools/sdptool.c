@@ -2042,7 +2042,6 @@ static int add_mas(sdp_session_t *session, svc_info_t *si)
 {
 	sdp_list_t *svclass_id, *pfseq, *apseq, *root;
 	uuid_t root_uuid, ftrn_uuid, l2cap_uuid, rfcomm_uuid, obex_uuid;
-	uuid_t masid_uuid, sprtd_msg_uuid;
 	uint16_t masid;
 	uint8_t  sprtd_msg;
 	sdp_profile_desc_t profile[1];

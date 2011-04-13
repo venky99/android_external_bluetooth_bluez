@@ -126,7 +126,7 @@ static int init_server(uint16_t mtu, int master, int compat)
 		unix_sock = -1;
 		return 0;
 	}
-#if 0
+#ifndef ANDROID
         /* Create local Unix socket */
         unix_sock = socket(PF_UNIX, SOCK_STREAM, 0);
         if (unix_sock < 0) {

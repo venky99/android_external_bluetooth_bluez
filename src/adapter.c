@@ -1856,6 +1856,7 @@ static DBusMessage *unregister_agent(DBusConnection *conn, DBusMessage *msg,
 	return dbus_message_new_method_return(msg);
 }
 
+#ifdef ANDROID
 static sdp_record_t *create_rfcomm_record(struct btd_adapter *adapter,
 					const char *name, uuid_t uuid, uint8_t channel)
 {
@@ -1938,11 +1939,11 @@ static DBusMessage *add_rfcomm_service_record(DBusConnection *conn,
 
 	return reply;
 }
+#endif
 
 static DBusMessage *remove_service_record(DBusConnection *conn,
 					DBusMessage *msg, void *data)
 {
-	struct btd_adapter *adapter = data;
 	dbus_uint32_t handle;
 
 	if (!dbus_message_get_args(msg, NULL,
@@ -2066,7 +2067,9 @@ static GDBusMethodTable adapter_methods[] = {
 	{ "RegisterAgent",	"os",	"",	register_agent		},
 	{ "RegisterAgent",	"osb",	"",	register_agent_oob	},
 	{ "UnregisterAgent",	"o",	"",	unregister_agent	},
+#ifdef ANDROID
 	{ "AddRfcommServiceRecord",	"sttq",	"u",	add_rfcomm_service_record },
+#endif
 	{ "RemoveServiceRecord",	"u",	"",	remove_service_record },
 	{ "SetLinkTimeout",	"ou",	"",	set_link_timeout	},
 	{ }

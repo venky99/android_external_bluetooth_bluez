@@ -41,17 +41,9 @@ plugindir = $(libdir)/bluetooth/plugins
 
 plugin_LTLIBRARIES =
 
-
-lib_headers = lib/bluetooth.h lib/hci.h lib/hci_lib.h \
-			lib/sco.h lib/l2cap.h lib/sdp.h lib/sdp_lib.h \
-				lib/rfcomm.h lib/bnep.h lib/cmtp.h lib/hidp.h
-
-include_HEADERS += $(lib_headers)
-
 lib_LTLIBRARIES += lib/libbluetooth.la
 
-lib_libbluetooth_la_SOURCES = $(lib_headers) \
-					lib/bluetooth.c lib/hci.c lib/sdp.c
+lib_libbluetooth_la_SOURCES = lib/bluetooth.c lib/hci.c lib/sdp.c
 lib_libbluetooth_la_LDFLAGS = -version-info 12:0:9
 
 
