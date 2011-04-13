@@ -671,7 +671,7 @@ void hcid_dbus_inquiry_result(bdaddr_t *local, bdaddr_t *peer, uint32_t class,
 	dev = adapter_search_found_devices(adapter, &match);
 	if (dev) {
 		adapter_update_found_devices(adapter, peer, rssi, class,
-						NULL, NULL, legacy,
+						NULL, NULL, dev->legacy,
 						NAME_NOT_REQUIRED, data);
 		return;
 	}
