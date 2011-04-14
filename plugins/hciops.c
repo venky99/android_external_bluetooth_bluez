@@ -185,7 +185,6 @@ static void init_device(int index)
 	if (hci_devinfo(index, &di) < 0)
 		goto fail;
 
-done:
 	hci_close_dev(dd);
 	exit(0);
 

@@ -1112,7 +1112,7 @@ static void cmd_cmd(int dev_id, int argc, char **argv)
 	for (i = 2, len = 0; i < argc && len < (int) sizeof(buf); i++) {
 		unsigned long parm_len = strlen(argv[i]);
 		unsigned char *u8_ptr;
-		int k;
+		unsigned int k;
 
 		/* Sanity check */
 		if(parm_len < 2) {

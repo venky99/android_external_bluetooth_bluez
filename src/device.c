@@ -862,14 +862,14 @@ static DBusMessage *get_service_attribute_value_reply(DBusMessage *msg, DBusConn
 							sdp_data_t *attr)
 {
 	DBusMessage *reply;
-	DBusMessageIter iter;
+	sdp_data_t *curr;
+	sdp_list_t *ap = 0;
+	const char * supported_formats;
+	int ch;
 
 	reply = dbus_message_new_method_return(msg);
 	if (!reply)
 		return NULL;
-	sdp_data_t *curr;
-	sdp_list_t *ap = 0;
-	const char * supported_formats;
 
 	DBG("Attribute id: 0x%04x", attr->attrId );
 	switch(attr->attrId)
@@ -886,7 +886,7 @@ static DBusMessage *get_service_attribute_value_reply(DBusMessage *msg, DBusConn
 				}
 				ap = sdp_list_append(ap, pds);
 			}
-			int ch = sdp_get_proto_port(ap, RFCOMM_UUID);
+			ch = sdp_get_proto_port(ap, RFCOMM_UUID);
 			sdp_list_foreach(ap, (sdp_list_func_t) sdp_list_free, NULL);
 			sdp_list_free(ap, NULL);
 			ap = NULL;
@@ -911,11 +911,10 @@ static DBusMessage *get_service_attribute_value(DBusConnection *conn,
 						void *user_data)
 {
 	struct btd_device *device = user_data;
-	sdp_record_t *rec;
+	const sdp_record_t *rec;
 	sdp_data_t *attr_data;
 	const char *pattern;
 	uint16_t attrId;
-	int err;
 
 	if (dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &pattern,
 					DBUS_TYPE_UINT16, &attrId,

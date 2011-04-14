@@ -690,7 +690,6 @@ static DBusMessage *sink_suspend(DBusConnection *conn,
 {
 	struct audio_device *device = data;
 	struct sink *sink = device->sink;
-	struct pending_request *pending;
 	int err;
 
 	if (!sink->session)
@@ -724,7 +723,6 @@ static DBusMessage *sink_resume(DBusConnection *conn,
 {
 	struct audio_device *device = data;
 	struct sink *sink = device->sink;
-	struct pending_request *pending;
 	int err;
 
 	if (!sink->session)
@@ -935,16 +933,6 @@ struct sink *sink_init(struct audio_device *dev)
 	return sink;
 }
 
-gboolean sink_get_protection(struct audio_device *dev)
-{
-	struct sink *sink = dev->sink;
-
-	if (sink->protected)
-		return TRUE;
-
-	return FALSE;
-}
-
 gboolean sink_is_active(struct audio_device *dev)
 {
 	struct sink *sink = dev->sink;
@@ -957,8 +945,6 @@ gboolean sink_is_active(struct audio_device *dev)
 
 gboolean sink_is_streaming(struct audio_device *dev)
 {
-	struct sink *sink = dev->sink;
-
 	if (sink_get_state(dev) == AVDTP_STATE_STREAMING)
 		return TRUE;
 
