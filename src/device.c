@@ -1547,27 +1547,32 @@ static void update_services(struct browse_req *req, sdp_list_t *recs)
 							sdp_copy_record(rec));
 
 		svcclass2 = svcclass;
-append_uuid:
-		l = g_slist_find_custom(device->uuids, profile_uuid,
-							(GCompareFunc) strcmp);
-		if (!l)
-			req->profiles_added =
-					g_slist_append(req->profiles_added,
-							profile_uuid);
-		else {
-			req->profiles_removed =
-					g_slist_remove(req->profiles_removed,
-							l->data);
-			g_free(profile_uuid);
-		}
 
-		if(svcclass2 = svcclass2->next){
-			profile_uuid = bt_uuid2string(svcclass2->data);
-			if (profile_uuid) {
-				DBG("update_services: uuid ext - %s", profile_uuid );
-				goto append_uuid;
+		do {
+			l = g_slist_find_custom(device->uuids, profile_uuid,
+								(GCompareFunc) strcmp);
+			if (!l)
+				req->profiles_added =
+						g_slist_append(req->profiles_added,
+								profile_uuid);
+			else {
+				req->profiles_removed =
+						g_slist_remove(req->profiles_removed,
+								l->data);
+				g_free(profile_uuid);
 			}
-		}
+
+			svcclass2 = svcclass2->next;
+			profile_uuid = NULL;
+
+			if (svcclass2) {
+				profile_uuid = bt_uuid2string(svcclass2->data);
+				if (!profile_uuid) {
+					DBG("Get additional Service Class ID fail");
+				}
+			}
+		} while (profile_uuid);
+
 		sdp_list_free(svcclass, free);
 	}
 }
@@ -1758,6 +1763,8 @@ int device_browse(struct btd_device *device, DBusConnection *conn,
 	uuid_t uuid;
 	bt_callback_t cb;
 	int err;
+
+	DBG("%s: Starting Device Browse ",__FUNCTION__);
 
 	if (device->browse)
 		return -EBUSY;
@@ -1999,6 +2006,7 @@ void device_set_paired(struct btd_device *device, gboolean value)
 
 	device->paired = value;
 
+	DBG("%s: Emitting Paired status",__FUNCTION__);
 	emit_property_changed(conn, device->path, DEVICE_INTERFACE, "Paired",
 				DBUS_TYPE_BOOLEAN, &value);
 }
@@ -2277,9 +2285,11 @@ void device_bonding_complete(struct btd_device *device, uint8_t status)
 			device->discov_timer = 0;
 		}
 
+		DBG("Before Device_Browse");
 		device_browse(device, bonding->conn, bonding->msg,
 				NULL, FALSE);
 
+		DBG("After Device_Browse");
 		bonding_request_free(bonding);
 	} else {
 		if (!device->browse && !device->discov_timer &&
@@ -2295,6 +2305,7 @@ void device_bonding_complete(struct btd_device *device, uint8_t status)
 		}
 	}
 
+	DBG("Emitting Paired status");
 	device_set_paired(device, TRUE);
 }
 

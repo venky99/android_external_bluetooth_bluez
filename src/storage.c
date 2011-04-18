@@ -1023,22 +1023,22 @@ sdp_record_t *find_record_in_list(sdp_list_t *recs, const char *uuid)
 
 		/* Extract the uuid */
 		svcclass_ext = svcclass;
-extract_uuid:
-		uuid_str = bt_uuid2string(svcclass_ext->data);
-		if (!uuid_str)
-			continue;
+		do {
+			uuid_str = bt_uuid2string(svcclass_ext->data);
+			if (!uuid_str)
+				continue;
 
-		if (!strcasecmp(uuid_str, uuid)) {
-			sdp_list_free(svcclass, free);
+			if (!strcasecmp(uuid_str, uuid)) {
+				sdp_list_free(svcclass, free);
+				free(uuid_str);
+				return rec;
+			}
+
 			free(uuid_str);
-			return rec;
-		}
 
-		if(svcclass_ext = svcclass_ext->next)
-			goto extract_uuid;
+		} while (svcclass_ext = svcclass_ext->next);
 
 		sdp_list_free(svcclass, free);
-		free(uuid_str);
 	}
 	return NULL;
 }
@@ -1243,4 +1243,3 @@ int write_blocked(const bdaddr_t *local, const bdaddr_t *remote,
 
 	return textfile_caseput(filename, addr, "");
 }
-
