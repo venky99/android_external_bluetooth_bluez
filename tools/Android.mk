@@ -10,7 +10,7 @@ LOCAL_SRC_FILES:= \
 	avinfo.c
 
 LOCAL_CFLAGS:= \
-	-DVERSION=\"4.69\"
+	-DVERSION=\"4.91\"
 
 LOCAL_C_INCLUDES:=\
 	$(LOCAL_PATH)/../lib \
@@ -35,7 +35,7 @@ LOCAL_SRC_FILES:= \
 	sdptool.c
 
 LOCAL_CFLAGS:= \
-	-DVERSION=\"4.69\" -fpermissive
+	-DVERSION=\"4.91\" -fpermissive
 
 LOCAL_C_INCLUDES:=\
 	$(LOCAL_PATH)/../lib \
@@ -61,7 +61,7 @@ LOCAL_SRC_FILES:= \
 
 LOCAL_CFLAGS:= \
 	-DSTORAGEDIR=\"/tmp\" \
-	-DVERSION=\"4.69\"
+	-DVERSION=\"4.91\"
 
 LOCAL_C_INCLUDES:=\
 	$(LOCAL_PATH)/../lib \
@@ -87,7 +87,7 @@ LOCAL_SRC_FILES:= \
 
 LOCAL_CFLAGS:= \
 	-DSTORAGEDIR=\"/tmp\" \
-	-DVERSION=\"4.69\"
+	-DVERSION=\"4.91\"
 
 LOCAL_C_INCLUDES:=\
 	$(LOCAL_PATH)/../lib \
@@ -134,10 +134,11 @@ LOCAL_SRC_FILES:= \
 	hciattach.c \
 	hciattach_st.c \
 	hciattach_ti.c \
-	hciattach_tialt.c
+	hciattach_tialt.c \
+	hciattach_ath3k.c
 
 LOCAL_CFLAGS:= \
-	-DVERSION=\"4.69\" \
+	-DVERSION=\"4.91\" \
 	-D__BSD_VISIBLE=1
 
 LOCAL_C_INCLUDES:=\
@@ -159,12 +160,12 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
         kword.c \
-        main.c \
         parser.c \
+        rfcomm.c \
         lexer.c
 
 LOCAL_CFLAGS:= \
-        -DVERSION=\"4.69\" \
+        -DVERSION=\"4.91\" \
 	-DCONFIGDIR=\"/etc/bluetooth\" \
         -DNEED_PPOLL
 

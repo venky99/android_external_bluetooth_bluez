@@ -1,42 +1,34 @@
 LOCAL_PATH:= $(call my-dir)
 
-#
-# libplugin
-#
+# BTIO plugin
 
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
-	hciops.c \
-	gatt-example.c \
-	mgmtops.c \
-	service.c
+	btio.c
 
 LOCAL_CFLAGS:= \
 	-DVERSION=\"4.91\" \
-	-DBLUETOOTH_PLUGIN_BUILTIN \
-	-DSTORAGEDIR=\"/data/misc/bluetoothd\"
+	-DSTORAGEDIR=\"/data/misc/bluetoothd\" \
+	-DCONFIGDIR=\"/etc/bluetooth\" \
+	-DANDROID \
 
 LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../lib \
 	$(LOCAL_PATH)/../gdbus \
 	$(LOCAL_PATH)/../src \
-	$(LOCAL_PATH)/../btio \
-	$(LOCAL_PATH)/../attrib \
 	$(call include-path-for, glib) \
-	$(call include-path-for, dbus) \
+	$(call include-path-for, dbus)
 
 LOCAL_SHARED_LIBRARIES := \
-	libbluetoothd \
 	libbluetooth \
-	libcutils \
+	libbluetoothd \
 	libdbus
 
-LOCAL_STATIC_LIBRARIES := \
-	libglib_static
 
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/bluez-plugin
 LOCAL_UNSTRIPPED_PATH := $(TARGET_OUT_SHARED_LIBRARIES_UNSTRIPPED)/bluez-plugin
-LOCAL_MODULE:=libbuiltinplugin
+LOCAL_MODULE := libbtio_static
 
 include $(BUILD_STATIC_LIBRARY)
+

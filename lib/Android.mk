@@ -4,6 +4,7 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES:= \
 	bluetooth.c \
 	sdp.c \
+	uuid.c \
 	hci.c
 
 LOCAL_C_INCLUDES:= \

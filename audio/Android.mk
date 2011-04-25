@@ -14,14 +14,16 @@ LOCAL_SRC_FILES:= \
 	ipc.c \
 	main.c \
 	manager.c \
+	media.c \
 	module-bluetooth-sink.c \
 	sink.c \
 	source.c \
 	telephony-dummy.c \
+	transport.c \
 	unix.c
 
 LOCAL_CFLAGS:= \
-	-DVERSION=\"4.69\" \
+	-DVERSION=\"4.91\" \
 	-DSTORAGEDIR=\"/data/misc/bluetoothd\" \
 	-DCONFIGDIR=\"/etc/bluetooth\" \
 	-DANDROID \
@@ -31,13 +33,15 @@ LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../lib \
 	$(LOCAL_PATH)/../gdbus \
 	$(LOCAL_PATH)/../src \
+	$(LOCAL_PATH)/../btio \
 	$(call include-path-for, glib) \
 	$(call include-path-for, dbus)
 
 LOCAL_SHARED_LIBRARIES := \
 	libbluetooth \
 	libbluetoothd \
-	libdbus
+	libdbus \
+	libcutils
 
 
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/bluez-plugin
@@ -68,6 +72,7 @@ LOCAL_C_INCLUDES:= \
 	system/bluetooth/bluez-clean-headers
 
 LOCAL_SHARED_LIBRARIES := \
+	libutils \
 	libcutils
 
 LOCAL_MODULE := liba2dp

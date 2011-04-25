@@ -10,15 +10,16 @@ LOCAL_SRC_FILES:= \
 	android_bluez.c \
 	adapter.c \
 	agent.c \
-	btio.c \
+	attrib-server.c \
 	dbus-common.c \
-	dbus-hci.c \
 	device.c \
 	error.c \
+	event.c \
 	glib-helper.c \
 	log.c \
 	main.c \
 	manager.c \
+	oob.c \
 	oui.c \
 	plugin.c \
 	rfkill.c \
@@ -27,16 +28,16 @@ LOCAL_SRC_FILES:= \
 	sdpd-server.c \
 	sdpd-database.c \
 	sdp-xml.c \
-	security.c \
 	storage.c \
 	textfile.c
 
 LOCAL_CFLAGS:= \
-	-DVERSION=\"4.69\" \
+	-DVERSION=\"4.91\" \
 	-DSTORAGEDIR=\"/data/misc/bluetoothd\" \
 	-DCONFIGDIR=\"/etc/bluetooth\" \
 	-DSERVICEDIR=\"/system/bin\" \
 	-DPLUGINDIR=\"/system/lib/bluez-plugin\" \
+	-DOUIFILE=\"/var/lib/misc/oui.txt\" \
 	-DANDROID_SET_AID_AND_CAP \
 	-DANDROID_EXPAND_NAME
 
@@ -49,6 +50,9 @@ LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../lib \
 	$(LOCAL_PATH)/../gdbus \
 	$(LOCAL_PATH)/../plugins \
+	$(LOCAL_PATH)/../btio \
+	$(LOCAL_PATH)/../attrib \
+	$(LOCAL_PATH)/.. \
 	$(call include-path-for, glib) \
 	$(call include-path-for, glib)/glib \
 	$(call include-path-for, dbus)
@@ -57,13 +61,15 @@ LOCAL_SHARED_LIBRARIES := \
 	libdl \
 	libbluetooth \
 	libdbus \
+	libutils \
 	libcutils
 
 LOCAL_STATIC_LIBRARIES := \
-	libglib_static \
 	libbuiltinplugin \
-	libglib_static \
-	libgdbus_static
+	libgdbus_static \
+	libattrib_static \
+	libbtio_static \
+	libglib_static
 
 LOCAL_MODULE:=libbluetoothd
 
