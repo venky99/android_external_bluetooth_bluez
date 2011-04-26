@@ -1018,6 +1018,16 @@ static void user_confirm_request(int index, void *ptr)
 		goto fail;
 	}
 
+	/* Skip auto-accept if local capabilities are DisplayYesNo and
+	 * remote capabilities are DisplayOnly or NoInputNoOutput. */
+	if ((conn->loc_cap & 0x01) &&
+		(conn->rem_cap == 0x00 || conn->rem_cap == 0x03)) {
+		if (btd_event_user_consent(&dev->bdaddr, &req->bdaddr))
+			goto fail;
+		else
+			return;
+	}
+
 	/* If no side requires MITM protection; auto-accept */
 	if ((conn->loc_auth == 0xff || !loc_mitm || conn->rem_cap == 0x03) &&
 					(!rem_mitm || conn->loc_cap == 0x03)) {
