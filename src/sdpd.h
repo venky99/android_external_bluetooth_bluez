@@ -37,6 +37,7 @@
 
 #define EIR_DATA_LENGTH  240
 
+#define EIR_FLAGS                   0x01  /* flags */
 #define EIR_UUID16_SOME             0x02  /* 16-bit UUID, more available */
 #define EIR_UUID16_ALL              0x03  /* 16-bit UUID, all listed */
 #define EIR_UUID32_SOME             0x04  /* 32-bit UUID, more available */
@@ -70,20 +71,6 @@ void register_server_service(void);
 void register_device_id(const uint16_t vendor, const uint16_t product,
 						const uint16_t version);
 
-typedef struct {
-	uint32_t timestamp;
-	union {
-		uint16_t maxBytesSent;
-		uint16_t lastIndexSent;
-	} cStateValue;
-} sdp_cont_state_t;
-
-#define SDP_CONT_STATE_SIZE (sizeof(uint8_t) + sizeof(sdp_cont_state_t))
-
-sdp_buf_t *sdp_get_cached_rsp(sdp_cont_state_t *cstate);
-void sdp_cstate_cache_init(void);
-void sdp_cstate_clean_buf(void);
-
 int record_sort(const void *r1, const void *r2);
 void sdp_svcdb_reset(void);
 void sdp_svcdb_collect_all(int sock);
@@ -108,9 +95,7 @@ void stop_sdp_server(void);
 int add_record_to_server(const bdaddr_t *src, sdp_record_t *rec);
 int remove_record_from_server(uint32_t handle);
 
-void create_ext_inquiry_response(const char *name,
-					int8_t tx_power, sdp_list_t *services,
-					uint8_t *data);
+void sdp_init_services_list(bdaddr_t *device);
 #ifdef ANDROID
 static inline int android_get_control_socket(const char *name);
 #endif

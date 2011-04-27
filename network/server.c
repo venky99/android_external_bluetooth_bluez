@@ -31,9 +31,7 @@
 #include <errno.h>
 
 #include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
 #include <bluetooth/bnep.h>
-#include <bluetooth/l2cap.h>
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
 #include <netinet/in.h>
@@ -396,6 +394,21 @@ static gboolean bnep_setup(GIOChannel *chan,
 		return FALSE;
 	}
 
+	/* Highest known Control command ID
+	 * is BNEP_FILTER_MULT_ADDR_RSP = 0x06 */
+	if (req->type == BNEP_CONTROL &&
+				req->ctrl > BNEP_FILTER_MULT_ADDR_RSP) {
+		uint8_t pkt[3];
+
+		pkt[0] = BNEP_CONTROL;
+		pkt[1] = BNEP_CMD_NOT_UNDERSTOOD;
+		pkt[2] = req->ctrl;
+
+		send(sk, pkt, sizeof(pkt), 0);
+
+		return FALSE;
+	}
+
 	if (req->type != BNEP_CONTROL || req->ctrl != BNEP_SETUP_CONN_REQ)
 		return FALSE;
 
@@ -568,20 +581,6 @@ static uint32_t register_server_record(struct network_server *ns)
 	return record->handle;
 }
 
-
-static inline DBusMessage *failed(DBusMessage *msg, const char *description)
-{
-	return g_dbus_create_error(msg, ERROR_INTERFACE ".Failed",
-				description);
-}
-
-static inline DBusMessage *invalid_arguments(DBusMessage *msg,
-					const char *description)
-{
-	return g_dbus_create_error(msg, ERROR_INTERFACE ".InvalidArguments",
-				description);
-}
-
 static void server_disconnect(DBusConnection *conn, void *user_data)
 {
 	struct network_server *ns = user_data;
@@ -609,10 +608,10 @@ static DBusMessage *register_server(DBusConnection *conn,
 		return NULL;
 
 	if (g_strcmp0(uuid, "nap"))
-		return failed(msg, "Invalid UUID");
+		return btd_error_failed(msg, "Invalid UUID");
 
 	if (ns->record_id)
-		return failed(msg, "Already registered");
+		return btd_error_already_exists(msg);
 
 	reply = dbus_message_new_method_return(msg);
 	if (!reply)
@@ -620,7 +619,7 @@ static DBusMessage *register_server(DBusConnection *conn,
 
 	ns->record_id = register_server_record(ns);
 	if (!ns->record_id)
-		return failed(msg, "SDP record registration failed");
+		return btd_error_failed(msg, "SDP record registration failed");
 
 	g_free(ns->bridge);
 	ns->bridge = g_strdup(bridge);
@@ -644,7 +643,7 @@ static DBusMessage *unregister_server(DBusConnection *conn,
 		return NULL;
 
 	if (g_strcmp0(uuid, "nap"))
-		return failed(msg, "Invalid UUID");
+		return btd_error_failed(msg, "Invalid UUID");
 
 	reply = dbus_message_new_method_return(msg);
 	if (!reply)

@@ -35,6 +35,7 @@ extern "C" {
 #include <string.h>
 #include <endian.h>
 #include <byteswap.h>
+#include <netinet/in.h>
 
 #ifndef AF_BLUETOOTH
 #define AF_BLUETOOTH	31
@@ -74,6 +75,11 @@ struct bt_security {
 #define BT_AMP_POLICY_REQUIRE_BR_EDR	0
 #define BT_AMP_POLICY_PREFER_AMP		1
 #define BT_AMP_POLICY_PREFER_BR_EDR		2
+
+#define BT_FLUSHABLE	8
+
+#define BT_FLUSHABLE_OFF	0
+#define BT_FLUSHABLE_ON		1
 
 /* Connection and socket states */
 enum {
@@ -157,6 +163,59 @@ void bt_free(void *ptr);
 
 int bt_error(uint16_t code);
 char *bt_compidtostr(int id);
+
+typedef struct {
+	uint8_t data[16];
+} uint128_t;
+
+#if __BYTE_ORDER == __BIG_ENDIAN
+
+#define ntoh64(x) (x)
+
+static inline void ntoh128(const uint128_t *src, uint128_t *dst)
+{
+	memcpy(dst, src, sizeof(uint128_t));
+}
+
+static inline void btoh128(const uint128_t *src, uint128_t *dst)
+{
+	int i;
+
+	for (i = 0; i < 16; i++)
+		dst->data[15 - i] = src->data[i];
+}
+
+#else
+
+static inline uint64_t ntoh64(uint64_t n)
+{
+	uint64_t h;
+	uint64_t tmp = ntohl(n & 0x00000000ffffffff);
+
+	h = ntohl(n >> 32);
+	h |= tmp << 32;
+
+	return h;
+}
+
+static inline void ntoh128(const uint128_t *src, uint128_t *dst)
+{
+	int i;
+
+	for (i = 0; i < 16; i++)
+		dst->data[15 - i] = src->data[i];
+}
+
+static inline void btoh128(const uint128_t *src, uint128_t *dst)
+{
+	memcpy(dst, src, sizeof(uint128_t));
+}
+
+#endif
+
+#define hton64(x)     ntoh64(x)
+#define hton128(x, y) ntoh128(x, y)
+#define htob128(x, y) btoh128(x, y)
 
 #ifdef __cplusplus
 }

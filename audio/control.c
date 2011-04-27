@@ -40,7 +40,6 @@
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
-#include <bluetooth/l2cap.h>
 
 #include <glib.h>
 #include <dbus/dbus.h>
@@ -594,7 +593,7 @@ static void avctp_set_state(struct control *control, avctp_state_t new_state)
 {
 	GSList *l;
 	struct audio_device *dev = control->dev;
-	avdtp_session_state_t old_state = control->state;
+	avctp_state_t old_state = control->state;
 	gboolean value;
 
 	switch (new_state) {
@@ -1281,7 +1280,7 @@ static int avctp_send_passthrough(struct control *control, uint8_t op)
 	struct avctp_header *avctp = (void *) buf;
 	struct avrcp_header *avrcp = (void *) &buf[AVCTP_HEADER_LENGTH];
 	uint8_t *operands = &buf[AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH];
-	int err, sk = g_io_channel_unix_get_fd(control->io);
+	int sk = g_io_channel_unix_get_fd(control->io);
 	static uint8_t transaction = 0;
 
 	memset(buf, 0, sizeof(buf));
@@ -1298,15 +1297,17 @@ static int avctp_send_passthrough(struct control *control, uint8_t op)
 	operands[0] = op & 0x7f;
 	operands[1] = 0;
 
-	err = write(sk, buf, sizeof(buf));
-	if (err < 0)
-		return err;
+	if (write(sk, buf, sizeof(buf)) < 0)
+		return -errno;
 
 	/* Button release */
 	avctp->transaction = transaction++;
 	operands[0] |= 0x80;
 
-	return write(sk, buf, sizeof(buf));
+	if (write(sk, buf, sizeof(buf)) < 0)
+		return -errno;
+
+	return 0;
 }
 
 static DBusMessage *volume_up(DBusConnection *conn, DBusMessage *msg,
@@ -1322,19 +1323,14 @@ static DBusMessage *volume_up(DBusConnection *conn, DBusMessage *msg,
 		return NULL;
 
 	if (control->state != AVCTP_STATE_CONNECTED)
-		return g_dbus_create_error(msg,
-					ERROR_INTERFACE ".NotConnected",
-					"Device not Connected");
+		return btd_error_not_connected(msg);
 
 	if (!control->target)
-		return g_dbus_create_error(msg,
-					ERROR_INTERFACE ".NotSupported",
-					"AVRCP Target role not supported");
+		return btd_error_not_supported(msg);
 
 	err = avctp_send_passthrough(control, VOL_UP_OP);
 	if (err < 0)
-		return g_dbus_create_error(msg, ERROR_INTERFACE ".Failed",
-							strerror(-err));
+		return btd_error_failed(msg, strerror(-err));
 
 	return dbus_message_new_method_return(msg);
 }
@@ -1352,19 +1348,14 @@ static DBusMessage *volume_down(DBusConnection *conn, DBusMessage *msg,
 		return NULL;
 
 	if (control->state != AVCTP_STATE_CONNECTED)
-		return g_dbus_create_error(msg,
-					ERROR_INTERFACE ".NotConnected",
-					"Device not Connected");
+		return btd_error_not_connected(msg);
 
 	if (!control->target)
-		return g_dbus_create_error(msg,
-					ERROR_INTERFACE ".NotSupported",
-					"AVRCP Target role not supported");
+		return btd_error_not_supported(msg);
 
 	err = avctp_send_passthrough(control, VOL_DOWN_OP);
 	if (err < 0)
-		return g_dbus_create_error(msg, ERROR_INTERFACE ".Failed",
-							strerror(-err));
+		return btd_error_failed(msg, strerror(-err));
 
 	return dbus_message_new_method_return(msg);
 }

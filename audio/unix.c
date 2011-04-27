@@ -27,6 +27,7 @@
 #endif
 
 #include <stdio.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <stdlib.h>
@@ -44,6 +45,7 @@
 #include "device.h"
 #include "manager.h"
 #include "avdtp.h"
+#include "media.h"
 #include "a2dp.h"
 #include "headset.h"
 #include "sink.h"
@@ -112,6 +114,25 @@ static void client_free(struct unix_client *client)
 
 	g_free(client->interface);
 	g_free(client);
+}
+
+static int set_nonblocking(int fd)
+{
+	long arg;
+
+	arg = fcntl(fd, F_GETFL);
+	if (arg < 0)
+		return -errno;
+
+	/* Return if already nonblocking */
+	if (arg & O_NONBLOCK)
+		return 0;
+
+	arg |= O_NONBLOCK;
+	if (fcntl(fd, F_SETFL, arg) < 0)
+		return -errno;
+
+	return 0;
 }
 
 /* Pass file descriptor through local domain sockets (AF_LOCAL, formerly
@@ -829,7 +850,6 @@ static void a2dp_suspend_complete(struct avdtp *session,
 	struct unix_client *client = user_data;
 	char buf[BT_SUGGESTED_BUFFER_SIZE];
 	struct bt_stop_stream_rsp *rsp = (void *) buf;
-	struct a2dp_data *a2dp = &client->d.a2dp;
 
 	if (err)
 		goto failed;
@@ -847,15 +867,6 @@ failed:
 	error("suspend failed");
 
 	unix_ipc_error(client, BT_STOP_STREAM, EIO);
-
-	if (a2dp->sep) {
-		a2dp_sep_unlock(a2dp->sep, a2dp->session);
-		a2dp->sep = NULL;
-	}
-
-	avdtp_unref(a2dp->session);
-	a2dp->session = NULL;
-	a2dp->stream = NULL;
 }
 
 static void start_discovery(struct audio_device *dev, struct unix_client *client)
@@ -1067,6 +1078,8 @@ static void start_config(struct audio_device *dev, struct unix_client *client)
 	}
 
 	client->req_id = id;
+	g_slist_free(client->caps);
+	client->caps = NULL;
 
 	return;
 
@@ -1076,29 +1089,28 @@ failed:
 
 static void start_resume(struct audio_device *dev, struct unix_client *client)
 {
-	struct a2dp_data *a2dp;
+	struct a2dp_data *a2dp = NULL;
 	struct headset_data *hs;
 	unsigned int id;
-	gboolean unref_avdtp_on_fail = FALSE;
+	struct avdtp *session = NULL;
 
 	switch (client->type) {
 	case TYPE_SINK:
 	case TYPE_SOURCE:
 		a2dp = &client->d.a2dp;
 
-		if (!a2dp->session) {
-			a2dp->session = avdtp_get(&dev->src, &dev->dst);
-			unref_avdtp_on_fail = TRUE;
-		}
-
-		if (!a2dp->session) {
-			error("Unable to get a session");
-			goto failed;
-		}
-
 		if (!a2dp->sep) {
 			error("seid not opened");
 			goto failed;
+		}
+
+		if (!a2dp->session) {
+			session = avdtp_get(&dev->src, &dev->dst);
+			if (!session) {
+				error("Unable to get a session");
+				goto failed;
+			}
+			a2dp->session = session;
 		}
 
 		id = a2dp_resume(a2dp->session, a2dp->sep, a2dp_resume_complete,
@@ -1143,33 +1155,38 @@ static void start_resume(struct audio_device *dev, struct unix_client *client)
 	return;
 
 failed:
-	if (unref_avdtp_on_fail && a2dp->session) {
-		avdtp_unref(a2dp->session);
+	if (session) {
+		avdtp_unref(session);
 		a2dp->session = NULL;
 	}
+
 	unix_ipc_error(client, BT_START_STREAM, EIO);
 }
 
 static void start_suspend(struct audio_device *dev, struct unix_client *client)
 {
-	struct a2dp_data *a2dp;
+	struct a2dp_data *a2dp = NULL;
 	struct headset_data *hs;
 	unsigned int id;
-	gboolean unref_avdtp_on_fail = FALSE;
+	struct avdtp *session = NULL;
 
 	switch (client->type) {
 	case TYPE_SINK:
 	case TYPE_SOURCE:
 		a2dp = &client->d.a2dp;
 
-		if (!a2dp->session) {
-			a2dp->session = avdtp_get(&dev->src, &dev->dst);
-			unref_avdtp_on_fail = TRUE;
+		if (!a2dp->sep) {
+			error("seid not opened");
+			goto failed;
 		}
 
 		if (!a2dp->session) {
-			error("Unable to get a session");
-			goto failed;
+			session = avdtp_get(&dev->src, &dev->dst);
+			if (!session) {
+				error("Unable to get a session");
+				goto failed;
+			}
+			a2dp->session = session;
 		}
 
 		if (!a2dp->sep) {
@@ -1215,10 +1232,11 @@ static void start_suspend(struct audio_device *dev, struct unix_client *client)
 	return;
 
 failed:
-	if (unref_avdtp_on_fail && a2dp->session) {
-		avdtp_unref(a2dp->session);
+	if (session) {
+		avdtp_unref(session);
 		a2dp->session = NULL;
 	}
+
 	unix_ipc_error(client, BT_STOP_STREAM, EIO);
 }
 
@@ -1263,9 +1281,11 @@ static void start_close(struct audio_device *dev, struct unix_client *client,
 	case TYPE_SINK:
 		a2dp = &client->d.a2dp;
 
-		if (client->cb_id > 0)
+		if (client->cb_id > 0) {
 			avdtp_stream_remove_cb(a2dp->session, a2dp->stream,
 								client->cb_id);
+			client->cb_id = 0;
+		}
 		if (a2dp->sep) {
 			a2dp_sep_unlock(a2dp->sep, a2dp->session);
 			a2dp->sep = NULL;
@@ -1274,6 +1294,7 @@ static void start_close(struct audio_device *dev, struct unix_client *client,
 			avdtp_unref(a2dp->session);
 			a2dp->session = NULL;
 		}
+		a2dp->stream = NULL;
 		break;
 	default:
 		error("No known services for device");
@@ -1782,7 +1803,7 @@ static gboolean server_cb(GIOChannel *chan, GIOCondition cond, gpointer data)
 		return FALSE;
 
 	if (cond & (G_IO_HUP | G_IO_ERR)) {
-		g_io_channel_close(chan);
+		g_io_channel_shutdown(chan, TRUE, NULL);
 		return FALSE;
 	}
 

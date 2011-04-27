@@ -16,8 +16,10 @@ fi
 		--sysconfdir=/etc \
 		--localstatedir=/var \
 		--libexecdir=/lib \
-		--enable-netlink \
 		--enable-capng \
+		--enable-attrib \
+		--enable-gatt-example \
+		--enable-health \
 		--enable-tracer \
 		--enable-tools \
 		--enable-bccmd \
@@ -28,6 +30,7 @@ fi
 		--enable-dund \
 		--enable-test \
 		--enable-cups \
+		--enable-sap \
 		--disable-pcmcia \
 		--disable-udevrules \
 		--disable-configfiles $*

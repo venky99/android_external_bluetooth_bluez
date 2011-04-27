@@ -53,22 +53,6 @@
 
 #include <glib.h>
 
-#if __BYTE_ORDER == __LITTLE_ENDIAN
-static inline uint64_t ntoh64(uint64_t n)
-{
-	uint64_t h;
-	uint64_t tmp = ntohl(n & 0x00000000ffffffff);
-	h = ntohl(n >> 32);
-	h |= tmp << 32;
-	return h;
-}
-#elif __BYTE_ORDER == __BIG_ENDIAN
-#define ntoh64(x) (x)
-#else
-#error "Unknown byte order"
-#endif
-#define hton64(x) ntoh64(x)
-
 #define GHCI_DEV		"/dev/ghci"
 
 #define VHCI_DEV		"/dev/vhci"
@@ -440,7 +424,7 @@ static int scan_enable(uint8_t *data)
 
 	if (!(*data & SCAN_PAGE)) {
 		if (vdev.scan) {
-			g_io_channel_close(vdev.scan);
+			g_io_channel_shutdown(vdev.scan, TRUE, NULL);
 			vdev.scan = NULL;
 		}
 		return 0;
@@ -500,10 +484,13 @@ static void accept_connection(uint8_t *data)
 
 static void close_connection(struct vhci_conn *conn)
 {
-	syslog(LOG_INFO, "Closing connection %s handle %d",
-					batostr(&conn->dest), conn->handle);
+	char addr[18];
 
-	g_io_channel_close(conn->chan);
+	ba2str(&conn->dest, addr);
+	syslog(LOG_INFO, "Closing connection %s handle %d",
+					addr, conn->handle);
+
+	g_io_channel_shutdown(conn->chan, TRUE, NULL);
 	g_io_channel_unref(conn->chan);
 
 	vconn[conn->handle - 1] = NULL;
@@ -969,13 +956,16 @@ static gboolean io_hci_data(GIOChannel *chan, GIOCondition cond, gpointer data)
 {
 	unsigned char buf[HCI_MAX_FRAME_SIZE], *ptr;
 	int type;
-	gsize len;
-	GIOError err;
+	ssize_t len;
+	int fd;
 
 	ptr = buf;
 
-	if ((err = g_io_channel_read(chan, (gchar *) buf, sizeof(buf), &len))) {
-		if (err == G_IO_ERROR_AGAIN)
+	fd = g_io_channel_unix_get_fd(chan);
+
+	len = read(fd, buf, sizeof(buf));
+	if (len < 0) {
+		if (errno == EAGAIN)
 			return TRUE;
 
 		syslog(LOG_ERR, "Read failed: %s (%d)", strerror(errno), errno);
@@ -1018,7 +1008,7 @@ static int getbdaddrbyname(char *str, bdaddr_t *ba)
 
 	if (n == 5) {
 		/* BD address */
-		baswap(ba, strtoba(str));
+		str2ba(str, ba);
 		return 0;
 	}
 
