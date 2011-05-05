@@ -43,26 +43,25 @@ include $(BUILD_STATIC_LIBRARY)
 # gatttool
 #
 
-# include $(CLEAR_VARS)
+include $(CLEAR_VARS)
 
-# LOCAL_SRC_FILES:= \
-# 	utils.c \
-# 	gatttool.c
+LOCAL_SRC_FILES:= \
+	utils.c \
+	gatttool.c
 
-# LOCAL_CFLAGS:= \
-# 	-DVERSION=\"4.91\" -fpermissive
+LOCAL_CFLAGS:= \
+	-DVERSION=\"4.91\" -fpermissive
 
-# LOCAL_C_INCLUDES:=\
-# 	$(LOCAL_PATH)/../lib \
-# 	$(LOCAL_PATH)/../src \
-# 	$(LOCAL_PATH)/../btio \
-# 	$(call include-path-for, glib) \
-# 	$(call include-path-for, glib)/glib
+LOCAL_C_INCLUDES:=\
+	$(LOCAL_PATH)/../lib \
+	$(LOCAL_PATH)/../src \
+	$(LOCAL_PATH)/../btio \
+	$(call include-path-for, glib) \
+	$(call include-path-for, glib)/glib
 
-# LOCAL_SHARED_LIBRARIES := \
-# 	libbluetoothd libbluetooth
+LOCAL_SHARED_LIBRARIES := \
+	libbluetoothd libbluetooth
 
-# LOCAL_MODULE:=gatttool
+LOCAL_MODULE:=gatttool
 
-# include $(BUILD_EXECUTABLE)
-
+include $(BUILD_EXECUTABLE)
