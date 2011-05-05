@@ -407,9 +407,10 @@ static void mgmt_new_key(int sk, uint16_t index, void *buf, size_t len)
 
 	info = &controllers[index];
 
-	btd_event_link_key_notify(&info->bdaddr, &ev->key.bdaddr,
-					ev->key.val, ev->key.type,
-					ev->key.pin_len);
+	if (ev->store_hint)
+		btd_event_link_key_notify(&info->bdaddr, &ev->key.bdaddr,
+						ev->key.val, ev->key.type,
+						ev->key.pin_len);
 
 	btd_event_bonding_complete(&info->bdaddr, &ev->key.bdaddr, 0);
 }
@@ -601,6 +602,26 @@ static int mgmt_confirm_reply(int index, bdaddr_t *bdaddr, gboolean success)
 	return 0;
 }
 
+struct confirm_data {
+	int index;
+	bdaddr_t bdaddr;
+};
+
+static gboolean confirm_accept(gpointer user_data)
+{
+	struct confirm_data *data = user_data;
+	struct controller_info *info = &controllers[data->index];
+
+	DBG("auto-accepting incoming pairing request");
+
+	if (data->index > max_index || !info->valid)
+		return FALSE;
+
+	mgmt_confirm_reply(data->index, &data->bdaddr, TRUE);
+
+	return FALSE;
+}
+
 static void mgmt_user_confirm_request(int sk, uint16_t index, void *buf,
 								size_t len)
 {
@@ -616,11 +637,23 @@ static void mgmt_user_confirm_request(int sk, uint16_t index, void *buf,
 
 	ba2str(&ev->bdaddr, addr);
 
-	DBG("hci%u %s", index, addr);
+	DBG("hci%u %s confirm_hint %u", index, addr, ev->confirm_hint);
 
 	if (index > max_index) {
 		error("Unexpected index %u in user_confirm_request event",
 									index);
+		return;
+	}
+
+	if (ev->confirm_hint) {
+		struct confirm_data *data;
+
+		data = g_new0(struct confirm_data, 1);
+		data->index = index;
+		bacpy(&data->bdaddr, &ev->bdaddr);
+
+		g_timeout_add_seconds_full(G_PRIORITY_DEFAULT, 1,
+						confirm_accept, data, g_free);
 		return;
 	}
 
@@ -1706,23 +1739,6 @@ static int mgmt_get_conn_list(int index, GSList **conns)
 	return 0;
 }
 
-static int mgmt_read_local_version(int index, struct hci_version *ver)
-{
-	struct controller_info *info = &controllers[index];
-
-	DBG("index %d", index);
-
-	if (!info->valid)
-		return -ENODEV;
-
-	memset(ver, 0, sizeof(*ver));
-	ver->manufacturer = info->manufacturer;
-	ver->hci_ver = info->hci_ver;
-	ver->hci_rev = info->hci_rev;
-
-	return 0;
-}
-
 static int mgmt_read_local_features(int index, uint8_t *features)
 {
 	struct controller_info *info = &controllers[index];
@@ -2024,7 +2040,6 @@ static struct btd_adapter_ops mgmt_ops = {
 	.block_device = mgmt_block_device,
 	.unblock_device = mgmt_unblock_device,
 	.get_conn_list = mgmt_get_conn_list,
-	.read_local_version = mgmt_read_local_version,
 	.read_local_features = mgmt_read_local_features,
 	.disconnect = mgmt_disconnect,
 	.remove_bonding = mgmt_remove_bonding,

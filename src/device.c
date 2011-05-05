@@ -1513,6 +1513,45 @@ static void create_device_reply(struct btd_device *device, struct browse_req *re
 	g_dbus_send_message(req->conn, reply);
 }
 
+GSList *device_services_from_record(struct btd_device *device, GSList *profiles)
+{
+	GSList *l, *prim_list = NULL;
+	char *att_uuid;
+	uuid_t proto_uuid;
+
+	sdp_uuid16_create(&proto_uuid, ATT_UUID);
+	att_uuid = bt_uuid2string(&proto_uuid);
+
+	for (l = profiles; l; l = l->next) {
+		const char *profile_uuid = l->data;
+		const sdp_record_t *rec;
+		struct att_primary *prim;
+		uint16_t start = 0, end = 0, psm = 0;
+		uuid_t prim_uuid;
+
+		rec = btd_device_get_record(device, profile_uuid);
+		if (!rec)
+			continue;
+
+		if (!record_has_uuid(rec, att_uuid))
+			continue;
+
+		if (!gatt_parse_record(rec, &prim_uuid, &psm, &start, &end))
+			continue;
+
+		prim = g_new0(struct att_primary, 1);
+		prim->start = start;
+		prim->end = end;
+		sdp_uuid2strn(&prim_uuid, prim->uuid, sizeof(prim->uuid));
+
+		prim_list = g_slist_append(prim_list, prim);
+	}
+
+	g_free(att_uuid);
+
+	return prim_list;
+}
+
 static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 {
 	struct browse_req *req = user_data;
@@ -1542,8 +1581,16 @@ static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 	}
 
 	/* Probe matching drivers for services added */
-	if (req->profiles_added)
+	if (req->profiles_added) {
+		GSList *list;
+
 		device_probe_drivers(device, req->profiles_added);
+
+		list = device_services_from_record(device, req->profiles_added);
+		if (list)
+			device_register_services(req->conn, device, list,
+								ATT_PSM);
+	}
 
 	/* Remove drivers for services removed */
 	if (req->profiles_removed)
@@ -1692,14 +1739,26 @@ static char *primary_list_to_string(GSList *primary_list)
 	return g_string_free(services, FALSE);
 }
 
+static void store_services(struct btd_device *device)
+{
+	struct btd_adapter *adapter = device->adapter;
+	bdaddr_t dba, sba;
+	char *str = primary_list_to_string(device->services);
+
+	adapter_get_address(adapter, &sba);
+	device_get_address(device, &dba);
+
+	write_device_type(&sba, &dba, device->type);
+	write_device_services(&sba, &dba, str);
+
+	g_free(str);
+}
+
 static void primary_cb(GSList *services, guint8 status, gpointer user_data)
 {
 	struct browse_req *req = user_data;
 	struct btd_device *device = req->device;
-	struct btd_adapter *adapter = device->adapter;
 	GSList *l, *uuids = NULL;
-	bdaddr_t dba, sba;
-	char *str;
 
 	if (status) {
 		DBusMessage *reply;
@@ -1714,26 +1773,17 @@ static void primary_cb(GSList *services, guint8 status, gpointer user_data)
 	for (l = services; l; l = l->next) {
 		struct att_primary *prim = l->data;
 		uuids = g_slist_append(uuids, prim->uuid);
-		device_add_primary(device, prim);
 	}
 
 	device_probe_drivers(device, uuids);
 
-	/* FIXME: Need the correct psm */
-	attrib_client_register(req->conn, device, -1, req->attrib, services);
+	device_register_services(req->conn, device, g_slist_copy(services), -1);
 
 	g_slist_free(uuids);
 
 	create_device_reply(device, req);
 
-	str = primary_list_to_string(services);
-
-	adapter_get_address(adapter, &sba);
-	device_get_address(device, &dba);
-
-	write_device_type(&sba, &dba, device->type);
-	write_device_services(&sba, &dba, str);
-	g_free(str);
+	store_services(device);
 
 done:
 	device->browse = NULL;
@@ -1787,7 +1837,7 @@ int device_browse_primary(struct btd_device *device, DBusConnection *conn,
 	io = bt_io_connect(BT_IO_L2CAP, gatt_connect_cb, req, NULL, NULL,
 				BT_IO_OPT_SOURCE_BDADDR, &src,
 				BT_IO_OPT_DEST_BDADDR, &device->bdaddr,
-				BT_IO_OPT_CID, GATT_CID,
+				BT_IO_OPT_CID, ATT_CID,
 				BT_IO_OPT_SEC_LEVEL, sec_level,
 				BT_IO_OPT_INVALID);
 
@@ -2548,17 +2598,12 @@ void device_set_authorizing(struct btd_device *device, gboolean auth)
 	device->authorizing = auth;
 }
 
-void btd_device_add_service(struct btd_device *device, const char *path)
+void device_register_services(DBusConnection *conn, struct btd_device *device,
+						GSList *prim_list, int psm)
 {
-	if (g_slist_find_custom(device->services, path, (GCompareFunc) strcmp))
-		return;
-
-	device->services = g_slist_append(device->services, g_strdup(path));
-}
-
-void device_add_primary(struct btd_device *device, struct att_primary *prim)
-{
-	device->primaries = g_slist_append(device->primaries, prim);
+	device->services = attrib_client_register(conn, device, psm, NULL,
+								prim_list);
+	device->primaries = g_slist_concat(device->primaries, prim_list);
 }
 
 GSList *btd_device_get_primaries(struct btd_device *device)

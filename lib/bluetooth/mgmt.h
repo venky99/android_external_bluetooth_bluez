@@ -236,8 +236,8 @@ struct mgmt_ev_controller_error {
 
 #define MGMT_EV_NEW_KEY			0x000A
 struct mgmt_ev_new_key {
+	uint8_t store_hint;
 	struct mgmt_key_info key;
-	uint8_t old_key_type;
 } __packed;
 
 #define MGMT_EV_DEVICE_CONNECTED	0x000B
@@ -259,11 +259,13 @@ struct mgmt_ev_connect_failed {
 #define MGMT_EV_PIN_CODE_REQUEST	0x000E
 struct mgmt_ev_pin_code_request {
 	bdaddr_t bdaddr;
+	uint8_t secure;
 } __packed;
 
 #define MGMT_EV_USER_CONFIRM_REQUEST	0x000F
 struct mgmt_ev_user_confirm_request {
 	bdaddr_t bdaddr;
+	uint8_t confirm_hint;
 	uint32_t value;
 } __packed;
 
