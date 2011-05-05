@@ -8,9 +8,7 @@ LOCAL_SRC_FILES:= \
 	att.c \
 	client.c \
 	gatt.c \
-	gattrib.c \
-	main.c \
-	manager.c
+	gattrib.c
 
 LOCAL_CFLAGS:= \
 	-DVERSION=\"4.91\" \
