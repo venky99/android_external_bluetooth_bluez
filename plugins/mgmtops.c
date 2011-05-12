@@ -1374,13 +1374,10 @@ static void mgmt_discovering(int sk, uint16_t index, void *buf, size_t len)
 	if (!adapter)
 		return;
 
-	state = adapter_get_state(adapter);
-
-	if (ev->val) {
-		if (!(state & (STATE_STDINQ | STATE_LE_SCAN | STATE_PINQ)))
-			state |= STATE_PINQ;
-	} else
-		state &= ~(STATE_STDINQ | STATE_PINQ);
+	if (ev->val)
+		state = STATE_DISCOV;
+	else
+		state = STATE_IDLE;
 
 	adapter_set_state(adapter, state);
 }
@@ -1588,11 +1585,11 @@ static int mgmt_set_limited_discoverable(int index, gboolean limited)
 	return -ENOSYS;
 }
 
-static int mgmt_start_inquiry(int index, uint8_t length, gboolean periodic)
+static int mgmt_start_discovery(int index)
 {
 	struct mgmt_hdr hdr;
 
-	DBG("index %d length %u periodic %d", index, length, periodic);
+	DBG("index %d", index);
 
 	memset(&hdr, 0, sizeof(hdr));
 	hdr.opcode = htobs(MGMT_OP_START_DISCOVERY);
@@ -1604,7 +1601,7 @@ static int mgmt_start_inquiry(int index, uint8_t length, gboolean periodic)
 	return 0;
 }
 
-static int mgmt_stop_inquiry(int index)
+static int mgmt_stop_discovery(int index)
 {
 	struct mgmt_hdr hdr;
 
@@ -1618,18 +1615,6 @@ static int mgmt_stop_inquiry(int index)
 		return -errno;
 
 	return 0;
-}
-
-static int mgmt_start_scanning(int index)
-{
-	DBG("index %d", index);
-	return -ENOSYS;
-}
-
-static int mgmt_stop_scanning(int index)
-{
-	DBG("index %d", index);
-	return -ENOSYS;
 }
 
 static int mgmt_resolve_name(int index, bdaddr_t *bdaddr)
@@ -2026,10 +2011,8 @@ static struct btd_adapter_ops mgmt_ops = {
 	.set_discoverable = mgmt_set_discoverable,
 	.set_pairable = mgmt_set_pairable,
 	.set_limited_discoverable = mgmt_set_limited_discoverable,
-	.start_inquiry = mgmt_start_inquiry,
-	.stop_inquiry = mgmt_stop_inquiry,
-	.start_scanning = mgmt_start_scanning,
-	.stop_scanning = mgmt_stop_scanning,
+	.start_discovery = mgmt_start_discovery,
+	.stop_discovery = mgmt_stop_discovery,
 	.resolve_name = mgmt_resolve_name,
 	.cancel_resolve_name = mgmt_cancel_resolve_name,
 	.set_name = mgmt_set_name,

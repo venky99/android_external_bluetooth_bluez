@@ -28,6 +28,7 @@
 
 #define _GNU_SOURCE
 #include <stdio.h>
+#include <ctype.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -479,8 +480,8 @@ void btd_event_advertising_report(bdaddr_t *local, le_advertising_info *info)
 	rssi = *(info->data + info->length);
 
 	adapter_update_device_from_info(adapter, info->bdaddr, rssi,
-					info->evt_type, eir_data.name,
-					eir_data.services, eir_data.flags);
+					eir_data.name, eir_data.services,
+					eir_data.flags);
 
 	free_eir_data(&eir_data);
 }
@@ -515,7 +516,7 @@ void btd_event_device_found(bdaddr_t *local, bdaddr_t *peer, uint32_t class,
 	char local_addr[18], peer_addr[18], *alias, *name;
 	name_status_t name_status;
 	struct eir_data eir_data;
-	int state, err;
+	int err;
 	dbus_bool_t legacy;
 	unsigned char features[8];
 	const char *dev_name;
@@ -535,20 +536,8 @@ void btd_event_device_found(bdaddr_t *local, bdaddr_t *peer, uint32_t class,
 	if (data)
 		write_remote_eir(local, peer, data);
 
-	/*
-	 * Workaround to identify periodic inquiry: inquiry complete event is
-	 * sent after each window, however there isn't an event to indicate the
-	 * beginning of a new periodic inquiry window.
-	 */
-	state = adapter_get_state(adapter);
-	if (!(state & (STATE_STDINQ | STATE_LE_SCAN | STATE_PINQ))) {
-		state |= STATE_PINQ;
-		adapter_set_state(adapter, state);
-	}
-
 	/* the inquiry result can be triggered by NON D-Bus client */
-	if (adapter_get_discover_type(adapter) & DISC_RESOLVNAME &&
-				adapter_has_discov_sessions(adapter))
+	if (main_opts.name_resolv && adapter_has_discov_sessions(adapter))
 		name_status = NAME_REQUIRED;
 	else
 		name_status = NAME_NOT_REQUIRED;
@@ -650,17 +639,22 @@ void btd_event_remote_name(bdaddr_t *local, bdaddr_t *peer, uint8_t status,
 {
 	struct btd_adapter *adapter;
 	char srcaddr[18], dstaddr[18];
-	int state;
 	struct btd_device *device;
 	struct remote_dev_info match, *dev_info;
 
 	if (status == 0) {
-		char *end;
+		if (!g_utf8_validate(name, -1, NULL)) {
+			int i;
 
-		/* It's ok to cast end between const and non-const since
-		 * we know it points to inside of name which is non-const */
-		if (!g_utf8_validate(name, -1, (const char **) &end))
-			*end = '\0';
+			/* Assume ASCII, and replace all non-ASCII with
+			 * spaces */
+			for (i = 0; name[i] != '\0'; i++) {
+				if (!isascii(name[i]))
+					name[i] = ' ';
+			}
+			/* Remove leading and trailing whitespace characters */
+			g_strstrip(name);
+		}
 
 		write_device_name(local, peer, name);
 	}
@@ -695,9 +689,7 @@ proceed:
 	if (adapter_resolve_names(adapter) == 0)
 		return;
 
-	state = adapter_get_state(adapter);
-	state &= ~STATE_RESOLVNAME;
-	adapter_set_state(adapter, state);
+	adapter_set_state(adapter, STATE_IDLE);
 }
 
 int btd_event_link_key_notify(bdaddr_t *local, bdaddr_t *peer,
@@ -788,33 +780,6 @@ void btd_event_disconn_complete(bdaddr_t *local, bdaddr_t *peer)
 }
 
 /* Section reserved to device HCI callbacks */
-
-void btd_event_le_set_scan_enable_complete(bdaddr_t *local, uint8_t status)
-{
-	struct btd_adapter *adapter;
-	int state;
-
-	adapter = manager_find_adapter(local);
-	if (!adapter) {
-		error("No matching adapter found");
-		return;
-	}
-
-	if (status) {
-		error("Can't enable/disable LE scan");
-		return;
-	}
-
-	state = adapter_get_state(adapter);
-
-	/* Enabling or disabling ? */
-	if (state & STATE_LE_SCAN)
-		state &= ~STATE_LE_SCAN;
-	else
-		state |= STATE_LE_SCAN;
-
-	adapter_set_state(adapter, state);
-}
 
 void btd_event_returned_link_key(bdaddr_t *local, bdaddr_t *peer)
 {
