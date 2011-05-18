@@ -76,6 +76,7 @@
 #define IO_CAPABILITY_DISPLAYYESNO	0x01
 #define IO_CAPABILITY_KEYBOARDONLY	0x02
 #define IO_CAPABILITY_NOINPUTNOOUTPUT	0x03
+#define IO_CAPABILITY_KEYBOARDDISPLAY	0x04
 #define IO_CAPABILITY_INVALID		0xFF
 
 #define check_address(address) bachk(address)
@@ -299,6 +300,8 @@ int adapter_resolve_names(struct btd_adapter *adapter)
 	struct remote_dev_info *dev, match;
 	int err;
 
+	DBG("cur: %d", adapter->state);
+
 	/* Do not attempt to resolve more names if on suspended state */
 	if (adapter->state == STATE_SUSPENDED)
 		return 0;
@@ -308,6 +311,7 @@ int adapter_resolve_names(struct btd_adapter *adapter)
 	match.name_status = NAME_REQUIRED;
 
 	dev = adapter_search_found_devices(adapter, &match);
+	DBG("dev: %p", dev);
 	if (!dev)
 		return -ENODATA;
 
@@ -331,6 +335,8 @@ int adapter_resolve_names(struct btd_adapter *adapter)
 		/* get the next element */
 		dev = adapter_search_found_devices(adapter, &match);
 	} while (dev);
+
+	DBG("err: %d", err);
 
 	return err;
 }
@@ -1718,6 +1724,8 @@ static uint8_t parse_io_capability(const char *capability)
 		return IO_CAPABILITY_KEYBOARDONLY;
 	if (g_str_equal(capability, "NoInputNoOutput"))
 		return IO_CAPABILITY_NOINPUTNOOUTPUT;
+	if (g_str_equal(capability, "KeyboardDisplay"))
+		return IO_CAPABILITY_KEYBOARDDISPLAY;
 	return IO_CAPABILITY_INVALID;
 }
 
@@ -1739,6 +1747,8 @@ static DBusMessage *create_paired_device_generic(DBusConnection *conn,
 	if (check_address(address) < 0)
 		return btd_error_invalid_args(msg);
 
+	DBG("%s", address);
+
 	if (!adapter->up)
 		return btd_error_not_ready(msg);
 
@@ -1753,6 +1763,8 @@ static DBusMessage *create_paired_device_generic(DBusConnection *conn,
 	if (cap == IO_CAPABILITY_INVALID)
 		return btd_error_invalid_args(msg);
 
+	DBG("%s cap:%d", address, cap);
+
 	device = adapter_find_device(adapter, address);
 	if (!device) {
 		device = create_device_internal(conn, adapter, address, &err);
@@ -1760,15 +1772,15 @@ static DBusMessage *create_paired_device_generic(DBusConnection *conn,
 			return btd_error_failed(msg, strerror(-err));
 	}
 
-	if (device_get_type(device) != DEVICE_TYPE_LE)
+	//if (device_get_type(device) != DEVICE_TYPE_LE)
 		return device_create_bonding(device, conn, msg,
 							agent_path, cap, oob);
 
-	err = device_browse_primary(device, conn, msg, TRUE);
-	if (err < 0)
-		return btd_error_failed(msg, strerror(-err));
+	//err = device_browse_primary(device, conn, msg, TRUE);
+	//if (err < 0)
+		//return btd_error_failed(msg, strerror(-err));
 
-	return NULL;
+	//return NULL;
 }
 
 static DBusMessage *create_paired_device_oob(DBusConnection *conn,
@@ -2202,6 +2214,7 @@ static void create_stored_device_from_profiles(char *key, char *value,
 				key, (GCompareFunc) device_address_cmp))
 		return;
 
+	DBG("%s", key);
 	device = device_create(connection, adapter, key, DEVICE_TYPE_BREDR);
 	if (!device)
 		return;
@@ -2222,6 +2235,87 @@ struct adapter_keys {
 	struct btd_adapter *adapter;
 	GSList *keys;
 };
+
+static void get_le_key_info(void *klist, char *hash, char *value)
+{
+	struct adapter_keys *keys = klist;
+	struct link_key_info *info;
+	bdaddr_t addr;
+	uint8_t mask, bit, pin_len, auth;
+	char tmp[3], addrstr[18];
+	int i, offset, post_offset;
+
+	if (strlen(value) < 27) {
+		error("Unexpectedly short (%zu) link key line", strlen(value));
+		return;
+	}
+
+	memset(tmp, 0, sizeof(tmp));
+
+	memcpy(addrstr, value, 17);
+	addrstr[17] = '\0';
+	str2ba(addrstr, &addr);
+	mask = (uint8_t) strtol(&value[18], NULL, 16);
+	pin_len = (uint8_t) strtol(&value[18+3], NULL, 16);
+	auth = (uint8_t) strtol(&value[18+3+3], NULL, 16);
+	offset = 27;
+
+	for (bit = STORE_LTK; bit <= STORE_CSRK; bit <<= 1) {
+		if (bit & mask) {
+			switch (bit) {
+			case STORE_LTK:
+				info = g_malloc0(sizeof(*info) + 10);
+				post_offset = KEY_LTK_LEN;
+				info->type = KEY_TYPE_LTK;
+				info->dlen = 10;
+				for (i = 0; i < 10; i++) {
+					memcpy(tmp, value + offset + 33 + (i * 2), 2);
+					info->data[i] = (uint8_t) strtol(tmp, NULL, 16);
+				}
+				break;
+
+			case STORE_IRK:
+				info = g_malloc0(sizeof(*info) + 7);
+				post_offset = KEY_IRK_LEN;
+				info->type = KEY_TYPE_IRK;
+				info->dlen = 7;
+				for (i = 0; i < 7; i++) {
+					memcpy(tmp, value + offset + 33 + (i * 3), 2);
+					info->data[i] = (uint8_t) strtol(tmp, NULL, 16);
+				}
+				break;
+
+			case STORE_CSRK:
+				info = g_malloc0(sizeof(*info) + 4);
+				post_offset = KEY_CSRK_LEN;
+				info->type = KEY_TYPE_CSRK;
+				info->dlen = 4;
+				for (i = 0; i < 4; i++) {
+					memcpy(tmp, value + offset + 33 + (i * 2), 2);
+					info->data[i] = (uint8_t) strtol(tmp, NULL, 16);
+				}
+				break;
+
+			default:
+				info = NULL;
+			}
+
+			if (info) {
+				info->bdaddr = addr;
+				info->pin_len = pin_len;
+				info->auth = auth;
+
+				for (i = 0; i < 16; i++) {
+					memcpy(tmp, value + offset + (i * 2), 2);
+					info->key[i] = (uint8_t) strtol(tmp, NULL, 16);
+				}
+
+				keys->keys = g_slist_append(keys->keys, info);
+				offset += post_offset;
+			}
+		}
+	}
+}
 
 static struct link_key_info *get_key_info(const char *addr, const char *value)
 {
@@ -2274,7 +2368,33 @@ static void create_stored_device_from_linkkeys(char *key, char *value,
 					(GCompareFunc) device_address_cmp))
 		return;
 
+	DBG("%s", key);
 	device = device_create(connection, adapter, key, DEVICE_TYPE_BREDR);
+	if (device) {
+		device_set_temporary(device, FALSE);
+		adapter->devices = g_slist_append(adapter->devices, device);
+	}
+}
+
+static void create_stored_device_from_lekeys(char *key, char *value,
+							void *user_data)
+{
+	struct adapter_keys *keys = user_data;
+	struct btd_adapter *adapter = keys->adapter;
+	struct btd_device *device;
+
+	/* Ignore the "lasthash" key */
+	if (strcmp(key, "lasthash") == 0)
+		return;
+
+	get_le_key_info(user_data, key, value);
+
+	if (g_slist_find_custom(adapter->devices, key,
+					(GCompareFunc) device_hash_cmp))
+		return;
+
+	DBG("%s", key);
+	device = device_create(connection, adapter, value, DEVICE_TYPE_LE);
 	if (device) {
 		device_set_temporary(device, FALSE);
 		adapter->devices = g_slist_append(adapter->devices, device);
@@ -2291,6 +2411,7 @@ static void create_stored_device_from_blocked(char *key, char *value,
 				key, (GCompareFunc) device_address_cmp))
 		return;
 
+	DBG("%s", key);
 	device = device_create(connection, adapter, key, DEVICE_TYPE_BREDR);
 	if (device) {
 		device_set_temporary(device, FALSE);
@@ -2316,6 +2437,7 @@ static void create_stored_device_from_types(char *key, char *value,
 		return;
 	}
 
+	DBG("%s", key);
 	device = device_create(connection, adapter, key, type);
 	if (device) {
 		device_set_temporary(device, FALSE);
@@ -2369,6 +2491,7 @@ static void create_stored_device_from_primary(char *key, char *value,
 			key, (GCompareFunc) device_address_cmp))
 		return;
 
+	DBG("%s", key);
 	device = device_create(connection, adapter, key, DEVICE_TYPE_LE);
 	if (!device)
 		return;
@@ -2410,6 +2533,9 @@ static void load_devices(struct btd_adapter *adapter)
 
 	create_name(filename, PATH_MAX, STORAGEDIR, srcaddr, "linkkeys");
 	textfile_foreach(filename, create_stored_device_from_linkkeys, &keys);
+
+	create_name(filename, PATH_MAX, STORAGEDIR, srcaddr, "lekeys");
+	textfile_foreach(filename, create_stored_device_from_lekeys, &keys);
 
 	err = adapter_ops->load_keys(adapter->dev_id, keys.keys,
 							main_opts.debug_keys);
@@ -3128,6 +3254,8 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 	dbus_bool_t paired = FALSE;
 	dbus_int16_t rssi = dev->rssi;
 	char *alias;
+	device_type_t type;
+	char *dev_type;
 	size_t uuid_count;
 
 	ba2str(&dev->bdaddr, peer_addr);
@@ -3145,6 +3273,22 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 		dev->uuid_count = uuid_count;
 	}
 
+	if (dev && dev->le) {
+		/* Don't emit if we have found an LE duplicate of a Dual mode device */
+		if (device && (device_get_type(device) == DEVICE_TYPE_BREDR ||
+					device_get_type(device) == DEVICE_TYPE_DUALMODE))
+			return;
+		type = DEVICE_TYPE_LE;
+	} else {
+		if (device && (device_get_type(device) == DEVICE_TYPE_LE ||
+					device_get_type(device) == DEVICE_TYPE_DUALMODE))
+			type = DEVICE_TYPE_DUALMODE;
+		else
+			type = DEVICE_TYPE_BREDR;
+	}
+
+	dev_type = device_type2text(type);
+
 	if (dev->le) {
 		gboolean broadcaster;
 
@@ -3160,6 +3304,7 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 				"Paired", DBUS_TYPE_BOOLEAN, &paired,
 				"Broadcaster", DBUS_TYPE_BOOLEAN, &broadcaster,
 				"UUIDs", DBUS_TYPE_ARRAY, &dev->uuids, uuid_count,
+				"Type", DBUS_TYPE_STRING, &dev_type,
 				NULL);
 		return;
 	}
@@ -3185,6 +3330,7 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 			"LegacyPairing", DBUS_TYPE_BOOLEAN, &dev->legacy,
 			"Paired", DBUS_TYPE_BOOLEAN, &paired,
 			"UUIDs", DBUS_TYPE_ARRAY, &dev->uuids, uuid_count,
+			"Type", DBUS_TYPE_STRING, &dev_type,
 			NULL);
 
 	g_free(alias);
@@ -3280,7 +3426,7 @@ void adapter_update_device_from_info(struct btd_adapter *adapter,
 
 void adapter_update_found_devices(struct btd_adapter *adapter, bdaddr_t *bdaddr,
 				int8_t rssi, uint32_t class, const char *name,
-				const char *alias, gboolean legacy,
+				const char *alias, gboolean legacy, gboolean le,
 				GSList *services, name_status_t name_status)
 {
 	struct remote_dev_info *dev;
@@ -3295,7 +3441,7 @@ void adapter_update_found_devices(struct btd_adapter *adapter, bdaddr_t *bdaddr,
 		if (alias)
 			dev->alias = g_strdup(alias);
 
-		dev->le = FALSE;
+		dev->le = le;
 		dev->class = class;
 		dev->legacy = legacy;
 		dev->name_status = name_status;

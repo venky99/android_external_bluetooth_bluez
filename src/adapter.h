@@ -68,6 +68,9 @@ struct link_key_info {
 	unsigned char key[16];
 	uint8_t type;
 	uint8_t pin_len;
+	uint8_t auth;
+	uint8_t dlen;
+	uint8_t data[];
 };
 
 struct remote_dev_info {
@@ -120,9 +123,9 @@ void adapter_update_device_from_info(struct btd_adapter *adapter,
 					const char *name, GSList *services,
 					int flags);
 void adapter_update_found_devices(struct btd_adapter *adapter, bdaddr_t *bdaddr,
-				int8_t rssi, uint32_t class, const char *name,
-				const char *alias, gboolean legacy,
-				GSList *services, name_status_t name_status);
+			int8_t rssi, uint32_t class, const char *name,
+			const char *alias, gboolean legacy, gboolean le,
+			GSList *services, name_status_t name_status);
 int adapter_remove_found_device(struct btd_adapter *adapter, bdaddr_t *bdaddr);
 void adapter_emit_device_found(struct btd_adapter *adapter,
 						struct remote_dev_info *dev);

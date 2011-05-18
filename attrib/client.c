@@ -74,9 +74,20 @@ struct format {
 struct primary {
 	struct gatt_service *gatt;
 	struct att_primary *att;
+	DBusMessage *discovery_reply;
+	DBusMessage *discovery_msg;
+	guint	discovery_timer;
 	char *path;
 	GSList *chars;
 	GSList *watchers;
+};
+
+struct descriptor {
+	char *name;
+	char *desc;
+	uint16_t cli_conf_hndl;
+	uint16_t cli_conf;
+	struct format *format;
 };
 
 struct characteristic {
@@ -86,9 +97,8 @@ struct characteristic {
 	uint16_t end;
 	uint8_t perm;
 	char type[MAX_LEN_UUID_STR + 1];
-	char *name;
-	char *desc;
-	struct format *format;
+	struct descriptor desc;
+	DBusMessage *msg;
 	uint8_t *value;
 	size_t vlen;
 };
@@ -98,6 +108,7 @@ struct query_data {
 	struct characteristic *chr;
 	DBusMessage *msg;
 	uint16_t handle;
+	gboolean last;
 };
 
 struct watcher {
@@ -114,10 +125,10 @@ static void characteristic_free(void *user_data)
 	struct characteristic *chr = user_data;
 
 	g_free(chr->path);
-	g_free(chr->desc);
-	g_free(chr->format);
 	g_free(chr->value);
-	g_free(chr->name);
+	g_free(chr->desc.desc);
+	g_free(chr->desc.format);
+	g_free(chr->desc.name);
 	g_free(chr);
 }
 
@@ -206,9 +217,16 @@ static void append_char_dict(DBusMessageIter *iter, struct characteristic *chr)
 	/* FIXME: Translate UUID to name. */
 	dict_append_entry(&dict, "Name", DBUS_TYPE_STRING, &name);
 
-	if (chr->desc)
+	if (chr->desc.desc)
 		dict_append_entry(&dict, "Description", DBUS_TYPE_STRING,
-								&chr->desc);
+								&chr->desc.desc);
+
+	/* FIXME: Only if remote has Client Configuration */
+	dict_append_entry(&dict, "ClientConfiguration", DBUS_TYPE_UINT16,
+					  &(chr->desc.cli_conf));
+
+	dict_append_entry(&dict, "Properties", DBUS_TYPE_BYTE,
+					  &(chr->perm));
 
 	if (chr->value)
 		dict_append_array(&dict, "Value", DBUS_TYPE_BYTE, &chr->value,
@@ -241,6 +259,14 @@ static int characteristic_set_value(struct characteristic *chr,
 
 	memcpy(chr->value, value, vlen);
 	chr->vlen = vlen;
+
+	return 0;
+}
+
+static int characteristic_set_cli_conf(struct characteristic *chr,
+					const uint8_t *value)
+{
+	memcpy(&chr->desc.cli_conf, value, 2);
 
 	return 0;
 }
@@ -408,6 +434,96 @@ static int l2cap_connect(struct gatt_service *gatt, GError **gerr,
 	return 0;
 }
 
+static gboolean stop_discovery(gpointer user_data) {
+
+	struct primary *prim = (struct primary *) user_data;
+	struct gatt_service *gatt = prim->gatt;
+	DBusMessage *reply;
+
+	DBG("");
+	prim->discovery_timer = 0;
+
+	reply = btd_error_failed(prim->discovery_msg, "Discover characteristic values timed out");
+
+	if (g_dbus_send_message(prim->gatt->conn, reply))
+		DBG("Failed to send error response to Discover Characeristics");
+
+	prim->discovery_reply = NULL;
+	prim->discovery_msg = NULL;
+
+	g_attrib_unref(gatt->attrib);
+
+	return FALSE;
+
+}
+
+static void update_char_value(guint8 status, const guint8 *pdu,
+					guint16 len, gpointer user_data)
+{
+	struct query_data *current = user_data;
+	struct primary *prim = current->prim;
+	struct gatt_service *gatt = prim->gatt;
+	struct characteristic *chr = current->chr;
+	DBusMessage *reply;
+
+	DBG("");
+
+	if (status == 0) {
+		characteristic_set_value(chr, pdu + 1, len - 1);
+	} else if (status == ATT_ECODE_INSUFF_ENC) {
+		GIOChannel *io = g_attrib_get_channel(gatt->attrib);
+
+		if (bt_io_set(io, BT_IO_L2CAP, NULL,
+				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_HIGH,
+				BT_IO_OPT_INVALID)) {
+			gatt_read_char(gatt->attrib, chr->handle, 0,
+					update_char_value, current);
+			return;
+		}
+	}
+
+	if (chr->prim->discovery_reply != NULL) {
+
+		if (prim->discovery_timer > 0)
+			g_source_remove(prim->discovery_timer);
+		prim->discovery_timer = 0;
+
+		if (current->last) {
+
+			if (status == 0) {
+				g_dbus_send_message(gatt->conn, chr->prim->discovery_reply);
+			} else {
+				reply = btd_error_failed(prim->discovery_msg,
+										 "Discover characteristic failed");
+				g_dbus_send_message(gatt->conn, reply);
+			}
+
+			prim->discovery_reply = NULL;
+			prim->discovery_msg = NULL;
+
+		} else {
+			prim->discovery_timer = g_timeout_add_seconds(GATT_TIMEOUT,
+													stop_discovery, prim);
+		}
+	}  else if (chr->msg != NULL) {
+
+		if (status == 0) {
+			reply = dbus_message_new_method_return(chr->msg);
+		} else {
+			reply = btd_error_failed(chr->msg,
+									 "Update characteristic value failed");
+		}
+
+		if (reply)
+			g_dbus_send_message(gatt->conn, reply);
+
+		chr->msg = NULL;
+	}
+
+	g_attrib_unref(gatt->attrib);
+	g_free(current);
+}
+
 static DBusMessage *register_watcher(DBusConnection *conn,
 						DBusMessage *msg, void *data)
 {
@@ -416,6 +532,7 @@ static DBusMessage *register_watcher(DBusConnection *conn,
 	struct watcher *watcher;
 	GError *gerr = NULL;
 	char *path;
+	DBusMessage *reply;
 
 	if (!dbus_message_get_args(msg, NULL, DBUS_TYPE_OBJECT_PATH, &path,
 							DBUS_TYPE_INVALID))
@@ -427,6 +544,13 @@ static DBusMessage *register_watcher(DBusConnection *conn,
 		return reply;
 	}
 
+	g_attrib_register(prim->gatt->attrib,
+					ATT_OP_HANDLE_NOTIFY,
+					events_handler, prim->gatt, NULL);
+	g_attrib_register(prim->gatt->attrib,
+					ATT_OP_HANDLE_IND,
+					events_handler, prim->gatt, NULL);
+
 	watcher = g_new0(struct watcher, 1);
 	watcher->name = g_strdup(sender);
 	watcher->prim = prim;
@@ -436,7 +560,11 @@ static DBusMessage *register_watcher(DBusConnection *conn,
 
 	prim->watchers = g_slist_append(prim->watchers, watcher);
 
-	return dbus_message_new_method_return(msg);
+	reply = dbus_message_new_method_return(msg);
+
+	g_attrib_unref(prim->gatt->attrib);
+
+	return reply;
 }
 
 static DBusMessage *unregister_watcher(DBusConnection *conn,
@@ -468,10 +596,139 @@ static DBusMessage *unregister_watcher(DBusConnection *conn,
 	return dbus_message_new_method_return(msg);
 }
 
+static void gatt_write_char_resp(guint8 status, const guint8 *pdu,
+					guint16 len, gpointer user_data)
+{
+	struct query_data *current = user_data;
+	struct primary *prim = current->prim;
+	struct gatt_service *gatt = prim->gatt;
+	struct characteristic *chr = current->chr;
+	DBusMessage *reply;
+	DBusMessage *msg;
+	DBusMessageIter iter, sub, sub_value;
+	DBusMessageIter dict;
+	uint8_t *value;
+	int vlen;
+
+	DBG("Gatt Write Char Response Recv, status = %d", status);
+
+	if (status == 0) {
+		msg = chr->msg;
+		dbus_message_iter_init(msg, &iter);
+		dbus_message_iter_next(&iter);
+		dbus_message_iter_recurse(&iter, &sub);
+		dbus_message_iter_recurse(&sub, &sub_value);
+		dbus_message_iter_get_fixed_array(&sub_value, &value, &vlen);
+
+		characteristic_set_value(chr, value, vlen);
+
+		reply = dbus_message_new_method_return(chr->msg);
+		if (!reply) {
+			chr->msg == NULL;
+			return;
+		}
+
+		g_dbus_send_message(gatt->conn, reply);
+
+		chr->msg = NULL;
+
+	} else if (status == ATT_ECODE_INSUFF_ENC) {
+		GIOChannel *io = g_attrib_get_channel(gatt->attrib);
+
+		if (bt_io_set(io, BT_IO_L2CAP, NULL,
+				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_HIGH,
+				BT_IO_OPT_INVALID)) {
+			gatt_read_char(gatt->attrib, chr->handle, 0,
+					gatt_write_char_resp, current);
+			return;
+		}
+	} else {
+		reply = btd_error_invalid_args(chr->msg);
+		if (!reply) {
+			DBG("reply is NULL");
+			chr->msg == NULL;
+		} else {
+			g_dbus_send_message(gatt->conn, reply);
+			chr->msg = NULL;
+		}
+	}
+
+	g_attrib_unref(gatt->attrib);
+
+}
+
+static void gatt_write_cli_conf_resp(guint8 status, const guint8 *pdu,
+					guint16 len, gpointer user_data)
+{
+	struct query_data *current = user_data;
+	struct primary *prim = current->prim;
+	struct gatt_service *gatt = prim->gatt;
+	struct characteristic *chr = current->chr;
+	DBusMessage *reply;
+	DBusMessage *msg;
+	DBusMessageIter iter, sub, sub_value;
+	DBusMessageIter dict;
+	uint8_t *value;
+	int vlen;
+
+	DBG("Gatt Write Cli Conf Response Recv, status = %d", status);
+
+	if (status == 0) {
+		msg = chr->msg;
+		dbus_message_iter_init(msg, &iter);
+		dbus_message_iter_next(&iter);
+		dbus_message_iter_recurse(&iter, &sub);
+		dbus_message_iter_recurse(&sub, &sub_value);
+		dbus_message_iter_get_fixed_array(&sub_value, &value, &vlen);
+
+		characteristic_set_cli_conf(chr, value);
+
+		reply = dbus_message_new_method_return(chr->msg);
+		if (!reply) {
+			chr->msg == NULL;
+			return;
+		}
+
+		g_dbus_send_message(gatt->conn, reply);
+		chr->msg = NULL;
+
+	} else if (status == ATT_ECODE_INSUFF_ENC) {
+		GIOChannel *io = g_attrib_get_channel(gatt->attrib);
+
+		if (bt_io_set(io, BT_IO_L2CAP, NULL,
+				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_HIGH,
+				BT_IO_OPT_INVALID)) {
+			gatt_read_char(gatt->attrib, chr->handle, 0,
+					gatt_write_char_resp, current);
+			return;
+		}
+	} else {
+		reply = btd_error_invalid_args(chr->msg);
+		if (!reply) {
+			chr->msg == NULL;
+		} else {
+			g_dbus_send_message(gatt->conn, reply);
+			chr->msg = NULL;
+		}
+	}
+
+	g_attrib_unref(gatt->attrib);
+}
+
+/*
+static void gatt_write_cli_conf_resp(guint8 status, const guint8 *pdu,
+					guint16 len, gpointer user_data)
+{
+	DBG("Gatt Write Cli Conf Response Recv, status = %d", status);
+
+}
+*/
+
 static DBusMessage *set_value(DBusConnection *conn, DBusMessage *msg,
 			DBusMessageIter *iter, struct characteristic *chr)
 {
 	struct gatt_service *gatt = chr->prim->gatt;
+	struct query_data *qvalue;
 	DBusMessageIter sub;
 	GError *gerr = NULL;
 	uint8_t *value;
@@ -491,11 +748,56 @@ static DBusMessage *set_value(DBusConnection *conn, DBusMessage *msg,
 		return reply;
 	}
 
-	gatt_write_cmd(gatt->attrib, chr->handle, value, len, NULL, NULL);
+	qvalue = g_new0(struct query_data, 1);
+	qvalue->prim = chr->prim;
+	qvalue->chr = chr;
 
-	characteristic_set_value(chr, value, len);
+	chr->msg = dbus_message_ref(msg);
 
-	return dbus_message_new_method_return(msg);
+	gatt->attrib = g_attrib_ref(gatt->attrib);
+
+	gatt_write_char(gatt->attrib, chr->handle, value,
+					len, gatt_write_char_resp, qvalue);
+
+  return NULL;
+}
+
+static DBusMessage *set_cli_conf(DBusConnection *conn, DBusMessage *msg,
+			DBusMessageIter *iter, struct characteristic *chr)
+{
+	struct gatt_service *gatt = chr->prim->gatt;
+  struct query_data *qvalue;
+	DBusMessageIter sub;
+	GError *gerr = NULL;
+	uint8_t *value;
+	int len;
+
+	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_ARRAY ||
+			dbus_message_iter_get_element_type(iter) != DBUS_TYPE_BYTE)
+		return btd_error_invalid_args(msg);
+
+	dbus_message_iter_recurse(iter, &sub);
+
+	dbus_message_iter_get_fixed_array(&sub, &value, &len);
+
+	if (l2cap_connect(gatt, &gerr, FALSE) < 0) {
+		DBusMessage *reply = btd_error_failed(msg, gerr->message);
+		g_error_free(gerr);
+		return reply;
+	}
+
+	qvalue = g_new0(struct query_data, 1);
+	qvalue->prim = chr->prim;
+	qvalue->chr = chr;
+
+	chr->msg = dbus_message_ref(msg);
+
+	gatt->attrib = g_attrib_ref(gatt->attrib);
+
+	gatt_write_char(gatt->attrib, chr->desc.cli_conf_hndl, value, len,
+					gatt_write_cli_conf_resp, qvalue);
+
+  return NULL;
 }
 
 static DBusMessage *get_properties(DBusConnection *conn, DBusMessage *msg,
@@ -538,15 +840,48 @@ static DBusMessage *set_property(DBusConnection *conn,
 
 	dbus_message_iter_recurse(&iter, &sub);
 
-	if (g_str_equal("Value", property))
+	if (g_str_equal("Value", property)) {
 		return set_value(conn, msg, &sub, chr);
+	} else if (g_str_equal("ClientConfiguration", property)) {
+		return set_cli_conf(conn, msg, &sub, chr);
+	}
 
 	return btd_error_invalid_args(msg);
+}
+
+static DBusMessage *fetch_value(DBusConnection *conn,
+					DBusMessage *msg, void *data)
+{
+	struct characteristic *chr = data;
+	struct query_data *qvalue;
+	GError *gerr = NULL;
+	struct primary *prim = chr->prim;
+	struct gatt_service *gatt = prim->gatt;
+
+	DBG("");
+
+	if (l2cap_connect(gatt, &gerr, FALSE) < 0) {
+		DBusMessage *reply = btd_error_failed(msg, gerr->message);
+		g_error_free(gerr);
+		return reply;
+	}
+
+	qvalue = g_new0(struct query_data, 1);
+	qvalue->prim = prim;
+	qvalue->chr = chr;
+
+	chr->msg = dbus_message_ref(msg);
+
+	gatt_read_char(gatt->attrib, chr->handle, 0, update_char_value, qvalue);
+
+	return NULL;
 }
 
 static GDBusMethodTable char_methods[] = {
 	{ "GetProperties",	"",	"a{sv}", get_properties },
 	{ "SetProperty",	"sv",	"",	set_property,
+						G_DBUS_METHOD_FLAG_ASYNC},
+	{ "UpdateValue",	"",	"",	fetch_value,
 						G_DBUS_METHOD_FLAG_ASYNC},
 	{ }
 };
@@ -690,6 +1025,31 @@ static void store_attribute(struct gatt_service *gatt, uint16_t handle,
 	g_free(str);
 }
 
+static void update_char_cli_conf(guint8 status, const guint8 *pdu, guint16 len,
+								gpointer user_data)
+{
+	struct query_data *current = user_data;
+	struct gatt_service *gatt = current->prim->gatt;
+	struct characteristic *chr = current->chr;
+
+	DBG("");
+
+	if (status != 0)
+		goto done;
+
+	if (len != 3)
+		goto done;
+
+	memcpy(&chr->desc.cli_conf, pdu + 1, 2);
+
+	store_attribute(gatt, current->handle, GATT_CLIENT_CHARAC_CFG_UUID,
+				(void *) &chr->desc.cli_conf, sizeof(chr->desc.cli_conf));
+
+done:
+	g_attrib_unref(gatt->attrib);
+	g_free(current);
+}
+
 static void update_char_desc(guint8 status, const guint8 *pdu, guint16 len,
 							gpointer user_data)
 {
@@ -699,15 +1059,15 @@ static void update_char_desc(guint8 status, const guint8 *pdu, guint16 len,
 
 	if (status == 0) {
 
-		g_free(chr->desc);
+		g_free(chr->desc.desc);
 
-		chr->desc = g_malloc(len);
-		memcpy(chr->desc, pdu + 1, len - 1);
-		chr->desc[len - 1] = '\0';
+		chr->desc.desc = g_malloc(len);
+		memcpy(chr->desc.desc, pdu + 1, len - 1);
+		chr->desc.desc[len - 1] = '\0';
 
 		store_attribute(gatt, current->handle,
 				GATT_CHARAC_USER_DESC_UUID,
-				(void *) chr->desc, len);
+				(void *) chr->desc.desc, len);
 	} else if (status == ATT_ECODE_INSUFF_ENC) {
 		GIOChannel *io = g_attrib_get_channel(gatt->attrib);
 
@@ -737,40 +1097,15 @@ static void update_char_format(guint8 status, const guint8 *pdu, guint16 len,
 	if (len < 8)
 		goto done;
 
-	g_free(chr->format);
+	g_free(chr->desc.format);
 
-	chr->format = g_new0(struct format, 1);
-	memcpy(chr->format, pdu + 1, 7);
+	chr->desc.format = g_new0(struct format, 1);
+	memcpy(chr->desc.format, pdu + 1, 7);
 
 	store_attribute(gatt, current->handle, GATT_CHARAC_FMT_UUID,
-				(void *) chr->format, sizeof(*chr->format));
+				(void *) chr->desc.format, sizeof(*chr->desc.format));
 
 done:
-	g_attrib_unref(gatt->attrib);
-	g_free(current);
-}
-
-static void update_char_value(guint8 status, const guint8 *pdu,
-					guint16 len, gpointer user_data)
-{
-	struct query_data *current = user_data;
-	struct gatt_service *gatt = current->prim->gatt;
-	struct characteristic *chr = current->chr;
-
-	if (status == 0)
-		characteristic_set_value(chr, pdu + 1, len - 1);
-	else if (status == ATT_ECODE_INSUFF_ENC) {
-		GIOChannel *io = g_attrib_get_channel(gatt->attrib);
-
-		if (bt_io_set(io, BT_IO_L2CAP, NULL,
-				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_HIGH,
-				BT_IO_OPT_INVALID)) {
-			gatt_read_char(gatt->attrib, chr->handle, 0,
-					update_char_value, current);
-			return;
-		}
-	}
-
 	g_attrib_unref(gatt->attrib);
 	g_free(current);
 }
@@ -824,7 +1159,12 @@ static void descriptor_cb(guint8 status, const guint8 *pdu, guint16 plen,
 		qfmt->chr = current->chr;
 		qfmt->handle = handle;
 
-		if (uuid_desc16_cmp(&uuid, GATT_CHARAC_USER_DESC_UUID) == 0) {
+		if (uuid_desc16_cmp(&uuid, GATT_CLIENT_CHARAC_CFG_UUID) == 0) {
+			gatt->attrib = g_attrib_ref(gatt->attrib);
+			current->chr->desc.cli_conf_hndl = handle;
+			gatt_read_char(gatt->attrib, handle, 0,
+						   update_char_cli_conf, qfmt);
+		} else if (uuid_desc16_cmp(&uuid, GATT_CHARAC_USER_DESC_UUID) == 0) {
 			gatt->attrib = g_attrib_ref(gatt->attrib);
 			gatt_read_char(gatt->attrib, handle, 0, update_char_desc,
 									qfmt);
@@ -842,27 +1182,38 @@ done:
 	g_free(current);
 }
 
-static void update_all_chars(gpointer data, gpointer user_data)
+static void update_all_chars(struct primary *prim)
 {
 	struct query_data *qdesc, *qvalue;
-	struct characteristic *chr = data;
-	struct primary *prim = user_data;
+	struct characteristic *chr;
 	struct gatt_service *gatt = prim->gatt;
+	GSList *l;
 
-	qdesc = g_new0(struct query_data, 1);
-	qdesc->prim = prim;
-	qdesc->chr = chr;
+	for(l = prim->chars; l; l = l->next) {
+		chr = l->data;
 
-	gatt->attrib = g_attrib_ref(gatt->attrib);
-	gatt_find_info(gatt->attrib, chr->handle + 1, chr->end, descriptor_cb,
-									qdesc);
+		qdesc = g_new0(struct query_data, 1);
+		qdesc->prim = prim;
+		qdesc->chr = chr;
 
-	qvalue = g_new0(struct query_data, 1);
-	qvalue->prim = prim;
-	qvalue->chr = chr;
+		gatt->attrib = g_attrib_ref(gatt->attrib);
+		gatt_find_info(gatt->attrib, chr->handle + 1, chr->end, descriptor_cb,
+					   qdesc);
 
-	gatt->attrib = g_attrib_ref(gatt->attrib);
-	gatt_read_char(gatt->attrib, chr->handle, 0, update_char_value, qvalue);
+		qvalue = g_new0(struct query_data, 1);
+		qvalue->prim = prim;
+		qvalue->chr = chr;
+		qvalue->last = (l->next==NULL);
+
+		gatt->attrib = g_attrib_ref(gatt->attrib);
+
+		gatt_read_char(gatt->attrib, chr->handle, 0, update_char_value, qvalue);
+	}
+
+	/* Start timer */
+	prim->discovery_timer = g_timeout_add_seconds(GATT_TIMEOUT,
+						stop_discovery, prim);
+
 }
 
 static void char_discovered_cb(GSList *characteristics, guint8 status,
@@ -910,6 +1261,7 @@ static void char_discovered_cb(GSList *characteristics, guint8 status,
 		previous_end = &chr->end;
 
 		prim->chars = g_slist_append(prim->chars, chr);
+
 	}
 
 	if (previous_end)
@@ -934,7 +1286,14 @@ static void char_discovered_cb(GSList *characteristics, guint8 status,
 
 	dbus_message_iter_close_container(&iter, &array_iter);
 
-	g_slist_foreach(prim->chars, update_all_chars, prim);
+	update_all_chars(prim);
+
+	prim->discovery_reply = reply;
+	prim->discovery_msg = current->msg;
+
+	g_free(current);
+
+	return;
 
 fail:
 	g_dbus_send_message(gatt->conn, reply);
@@ -950,6 +1309,8 @@ static DBusMessage *discover_char(DBusConnection *conn, DBusMessage *msg,
 	struct gatt_service *gatt = prim->gatt;
 	struct query_data *qchr;
 	GError *gerr = NULL;
+
+	DBG("");
 
 	if (l2cap_connect(prim->gatt, &gerr, FALSE) < 0) {
 		DBusMessage *reply = btd_error_failed(msg, gerr->message);
@@ -1080,6 +1441,8 @@ void attrib_client_unregister(struct btd_device *device)
 {
 	struct gatt_service *gatt;
 	GSList *l, *lp, *lc;
+
+	DBG("Unregister Client");
 
 	l = g_slist_find_custom(gatt_services, device, gatt_dev_cmp);
 	if (!l)

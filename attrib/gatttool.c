@@ -572,12 +572,10 @@ int main(int argc, char *argv[])
 		g_error_free(gerr);
 	}
 
-#ifndef ANDROID
 	if (opt_interactive) {
 		interactive(opt_src, opt_dst, opt_psm);
 		goto done;
 	}
-#endif
 
 	if (opt_primary)
 		operation = primary;

@@ -47,6 +47,7 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
 	utils.c \
+	interactive.c \
 	gatttool.c
 
 LOCAL_CFLAGS:= \
@@ -61,6 +62,9 @@ LOCAL_C_INCLUDES:=\
 
 LOCAL_SHARED_LIBRARIES := \
 	libbluetoothd libbluetooth
+
+LOCAL_STATIC_LIBRARIES := \
+	libglib_static
 
 LOCAL_MODULE:=gatttool
 

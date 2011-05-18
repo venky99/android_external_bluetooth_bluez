@@ -1042,7 +1042,7 @@ static void link_key_notify(int index, void *ptr)
 
 		err = btd_event_link_key_notify(&dev->bdaddr, dba,
 						evt->link_key, key_type,
-						dev->pin_length);
+						dev->pin_length, 0, 0, NULL);
 
 		if (err == -ENODEV)
 			status = HCI_OE_LOW_RESOURCES;
@@ -2231,8 +2231,8 @@ static inline void inquiry_result(int index, int plen, void *ptr)
 						(info->dev_class[1] << 8) |
 						(info->dev_class[2] << 16);
 
-		btd_event_device_found(&dev->bdaddr, &info->bdaddr, class,
-								0, NULL);
+		btd_event_device_found(&dev->bdaddr, &info->bdaddr, 0, 0,
+								class, 0, NULL);
 		ptr += INQUIRY_INFO_SIZE;
 	}
 }
@@ -2253,8 +2253,8 @@ static inline void inquiry_result_with_rssi(int index, int plen, void *ptr)
 						| (info->dev_class[1] << 8)
 						| (info->dev_class[2] << 16);
 
-			btd_event_device_found(&dev->bdaddr, &info->bdaddr,
-						class, info->rssi, NULL);
+			btd_event_device_found(&dev->bdaddr, &info->bdaddr, 0,
+						0, class, info->rssi, NULL);
 			ptr += INQUIRY_INFO_WITH_RSSI_AND_PSCAN_MODE_SIZE;
 		}
 	} else {
@@ -2265,7 +2265,7 @@ static inline void inquiry_result_with_rssi(int index, int plen, void *ptr)
 						| (info->dev_class[2] << 16);
 
 			btd_event_device_found(&dev->bdaddr, &info->bdaddr,
-						class, info->rssi, NULL);
+						0, 0, class, info->rssi, NULL);
 			ptr += INQUIRY_INFO_WITH_RSSI_SIZE;
 		}
 	}
@@ -2283,8 +2283,8 @@ static inline void extended_inquiry_result(int index, int plen, void *ptr)
 					| (info->dev_class[1] << 8)
 					| (info->dev_class[2] << 16);
 
-		btd_event_device_found(&dev->bdaddr, &info->bdaddr, class,
-						info->rssi, info->data);
+		btd_event_device_found(&dev->bdaddr, &info->bdaddr, 0, 0,
+						class, info->rssi, info->data);
 		ptr += EXTENDED_INQUIRY_INFO_SIZE;
 	}
 }
@@ -3861,6 +3861,8 @@ static int hciops_create_bonding(int index, bdaddr_t *bdaddr, uint8_t io_cap)
 	gboolean is_ssp_cap = FALSE;
 	struct bt_conn *conn;
 	GError *err = NULL;
+
+	DBG("hci%d io_cap 0x%02x", index, io_cap);
 
 	conn = get_connection(dev, bdaddr);
 

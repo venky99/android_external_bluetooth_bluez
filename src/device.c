@@ -116,12 +116,13 @@ struct btd_device {
 	bdaddr_t	bdaddr;
 	device_type_t	type;
 	gchar		*path;
+	uint32_t        hash;
 	char		name[MAX_NAME_LENGTH + 1];
 	char		*alias;
 	struct btd_adapter	*adapter;
 	GSList		*uuids;
 	GSList		*services;		/* Primary services path */
-	GSList		*primaries;		/* List of primary services */
+	GSList		*primaries;	    /* List of primary services */
 	GSList		*drivers;		/* List of device drivers */
 	GSList		*watches;		/* List of disconnect_data */
 	gboolean	temporary;
@@ -246,6 +247,20 @@ gboolean device_is_trusted(struct btd_device *device)
 	return device->trusted;
 }
 
+char *device_type2text(device_type_t type)
+{
+	switch (type) {
+	case DEVICE_TYPE_BREDR:
+		return "BREDR";
+	case  DEVICE_TYPE_LE:
+		return "LE";
+	case DEVICE_TYPE_DUALMODE:
+		return "DUALMODE";
+	default:
+		return "UNKNOWN";
+	}
+}
+
 static DBusMessage *get_properties(DBusConnection *conn,
 				DBusMessage *msg, void *user_data)
 {
@@ -260,10 +275,14 @@ static DBusMessage *get_properties(DBusConnection *conn,
 	const char *ptr;
 	dbus_bool_t boolean;
 	uint32_t class;
+	const char *dev_type;
 	int i;
 	GSList *l;
 
 	ba2str(&device->bdaddr, dstaddr);
+
+	DBG("%s", dstaddr);
+
 
 	reply = dbus_message_new_method_return(msg);
 	if (!reply)
@@ -334,6 +353,7 @@ static DBusMessage *get_properties(DBusConnection *conn,
 	g_free(str);
 
 	/* Services */
+	DBG("Services %p", device->services);
 	str = g_new0(char *, g_slist_length(device->services) + 1);
 	for (i = 0, l = device->services; l; l = l->next, i++)
 		str[i] = l->data;
@@ -343,6 +363,13 @@ static DBusMessage *get_properties(DBusConnection *conn,
 	/* Adapter */
 	ptr = adapter_get_path(adapter);
 	dict_append_entry(&dict, "Adapter", DBUS_TYPE_OBJECT_PATH, &ptr);
+
+
+	/* Type */
+	dev_type = device_type2text(device->type);
+	dict_append_entry(&dict, "Type",
+					  DBUS_TYPE_STRING, &dev_type);
+
 
 	dbus_message_iter_close_container(&iter, &dict);
 
@@ -1048,12 +1075,26 @@ struct btd_device *device_create(DBusConnection *conn,
 	if (device == NULL)
 		return NULL;
 
-	address_up = g_ascii_strup(address, -1);
-	device->path = g_strdup_printf("%s/dev_%s", adapter_path, address_up);
-	g_strdelimit(device->path, ":", '_');
-	g_free(address_up);
+	strncpy(srcaddr, address, 17);
+	srcaddr[17] = '\0';
+	str2ba(srcaddr, &device->bdaddr);
+	adapter_get_address(adapter, &src);
 
-	DBG("Creating device %s", device->path);
+	DBG("remote:%s type == %d", srcaddr, type);
+	if (type == DEVICE_TYPE_LE) {
+		DBG("DEVICE_TYPE_LE");
+		device->hash = read_le_hash(&src, &device->bdaddr, NULL, 0);
+		DBG("LE Hash: %8.8X", device->hash);
+		//device->path = g_strdup_printf("%s/dev_%8.8X", adapter_path, device->hash);
+	//} else {
+	}
+		address_up = g_ascii_strup(address, -1);
+		device->path = g_strdup_printf("%s/dev_%s", adapter_path, address_up);
+		g_strdelimit(device->path, ":", '_');
+		g_free(address_up);
+	//}
+
+	DBG("Creating device %s hash:%8.8X", device->path, device->hash);
 
 	if (g_dbus_register_interface(conn, device->path, DEVICE_INTERFACE,
 				device_methods, device_signals, NULL,
@@ -1062,10 +1103,8 @@ struct btd_device *device_create(DBusConnection *conn,
 		return NULL;
 	}
 
-	str2ba(address, &device->bdaddr);
 	device->adapter = adapter;
 	device->type = type;
-	adapter_get_address(adapter, &src);
 	ba2str(&src, srcaddr);
 	read_device_name(srcaddr, address, device->name);
 	if (read_device_alias(srcaddr, address, alias, sizeof(alias)) == 0)
@@ -1076,6 +1115,9 @@ struct btd_device *device_create(DBusConnection *conn,
 		device_block(conn, device);
 
 	if (read_link_key(&src, &device->bdaddr, NULL, NULL) == 0)
+		device->paired = TRUE;
+	else if (read_le_key(&src, &device->bdaddr, &device->hash, NULL, NULL,
+				NULL, 0, NULL, NULL, 0) == 0)
 		device->paired = TRUE;
 
 	return btd_device_ref(device);
@@ -1119,14 +1161,19 @@ void device_remove_bonding(struct btd_device *device)
 	bdaddr_t bdaddr;
 
 	adapter_get_address(device->adapter, &bdaddr);
-	ba2str(&bdaddr, srcaddr);
-	ba2str(&device->bdaddr, dstaddr);
 
-	create_name(filename, PATH_MAX, STORAGEDIR, srcaddr,
-			"linkkeys");
+	if (device->type == DEVICE_TYPE_LE) {
+		DBG("Removing LE device %s (hash: %8.8X)", device->path, device->hash);
+		delete_le_keys(&bdaddr, &device->bdaddr, device->hash);
+	} else {
+		ba2str(&bdaddr, srcaddr);
+		create_name(filename, PATH_MAX, STORAGEDIR, srcaddr,
+				"linkkeys");
 
-	/* Delete the link key from storage */
-	textfile_casedel(filename, dstaddr);
+		/* Delete the link key from storage */
+		ba2str(&device->bdaddr, dstaddr);
+		textfile_casedel(filename, dstaddr);
+	}
 
 	btd_adapter_remove_bonding(device->adapter, &device->bdaddr);
 }
@@ -1198,6 +1245,14 @@ gint device_address_cmp(struct btd_device *device, const gchar *address)
 
 	ba2str(&device->bdaddr, addr);
 	return strcasecmp(addr, address);
+}
+
+gint device_hash_cmp(struct btd_device *device, const gchar *hash)
+{
+	char hashstr[9];
+
+	sprintf(hashstr, "%8.8X", device->hash);
+	return strcasecmp(hashstr, hash);
 }
 
 static gboolean record_has_uuid(const sdp_record_t *rec,
@@ -1399,6 +1454,23 @@ static void services_changed(struct btd_device *device)
 	g_free(uuids);
 }
 
+static void gatt_services_changed(struct btd_device *device)
+{
+	DBusConnection *conn = get_dbus_connection();
+	char **services;
+	GSList *l;
+	int i;
+
+	services = g_new0(char *, g_slist_length(device->services) + 1);
+	for (i = 0, l = device->services; l; l = l->next, i++)
+		services[i] = l->data;
+
+	emit_array_property_changed(conn, device->path, DEVICE_INTERFACE,
+					"Services", DBUS_TYPE_STRING, &services, i);
+
+	g_free(services);
+}
+
 static int rec_cmp(const void *a, const void *b)
 {
 	const sdp_record_t *r1 = a;
@@ -1557,6 +1629,7 @@ GSList *device_services_from_record(struct btd_device *device, GSList *profiles)
 		struct att_primary *prim;
 		uint16_t start = 0, end = 0, psm = 0;
 		uuid_t prim_uuid;
+		uuid_t *uuid128;
 
 		rec = btd_device_get_record(device, profile_uuid);
 		if (!rec)
@@ -1571,7 +1644,10 @@ GSList *device_services_from_record(struct btd_device *device, GSList *profiles)
 		prim = g_new0(struct att_primary, 1);
 		prim->start = start;
 		prim->end = end;
-		sdp_uuid2strn(&prim_uuid, prim->uuid, sizeof(prim->uuid));
+
+		uuid128 = sdp_uuid_to_uuid128(&prim_uuid);
+		sdp_uuid2strn(uuid128, prim->uuid, sizeof(prim->uuid));
+		bt_free(uuid128);
 
 		prim_list = g_slist_append(prim_list, prim);
 	}
@@ -1775,7 +1851,7 @@ static void store_services(struct btd_device *device)
 {
 	struct btd_adapter *adapter = device->adapter;
 	bdaddr_t dba, sba;
-	char *str = primary_list_to_string(device->services);
+	char *str = primary_list_to_string(device->primaries);
 
 	adapter_get_address(adapter, &sba);
 	device_get_address(device, &dba);
@@ -1799,7 +1875,10 @@ static void primary_cb(GSList *services, guint8 status, gpointer user_data)
 		goto done;
 	}
 
+#ifdef BGIX
 	services_changed(device);
+#endif
+
 	device_set_temporary(device, FALSE);
 
 	for (l = services; l; l = l->next) {
@@ -1856,6 +1935,8 @@ int device_browse_primary(struct btd_device *device, DBusConnection *conn,
 	GIOChannel *io;
 	bdaddr_t src;
 
+	DBG("");
+
 	if (device->browse)
 		return -EBUSY;
 
@@ -1910,6 +1991,8 @@ int device_browse_sdp(struct btd_device *device, DBusConnection *conn,
 	bdaddr_t src;
 	uuid_t uuid;
 	int err;
+
+	DBG("");
 
 	if (device->browse)
 		return -EBUSY;
@@ -2027,7 +2110,10 @@ static gboolean start_discovery(gpointer user_data)
 {
 	struct btd_device *device = user_data;
 
-	device_browse_sdp(device, NULL, NULL, NULL, TRUE);
+	if (device_get_type(device) == DEVICE_TYPE_LE)
+		device_browse_primary(device, NULL, NULL, TRUE);
+	else
+		device_browse_sdp(device, NULL, NULL, NULL, TRUE);
 
 	device->discov_timer = 0;
 
@@ -2231,15 +2317,20 @@ DBusMessage *device_create_bonding(struct btd_device *device,
 	if (device->bonding)
 		return btd_error_in_progress(msg);
 
-	/* check if a link key already exists */
-	create_name(filename, PATH_MAX, STORAGEDIR, srcaddr,
-			"linkkeys");
+	if (device_get_type(device) != DEVICE_TYPE_LE) {
+		/* check if a link key already exists */
+		create_name(filename, PATH_MAX, STORAGEDIR, srcaddr,
+				"linkkeys");
 
-	str = textfile_caseget(filename, dstaddr);
-	if (str) {
-		free(str);
-		return btd_error_already_exists(msg);
+		str = textfile_caseget(filename, dstaddr);
+		if (str) {
+			free(str);
+			return btd_error_already_exists(msg);
+		}
 	}
+	//TODO: Check for LE exisiting bonding
+
+	DBG("%s %d", dstaddr, capability);
 
 	err = adapter_create_bonding(adapter, &device->bdaddr, capability);
 	if (err < 0)
@@ -2318,8 +2409,12 @@ void device_bonding_complete(struct btd_device *device, uint8_t status)
 			device->discov_timer = 0;
 		}
 
-		device_browse_sdp(device, bonding->conn, bonding->msg,
-				NULL, FALSE);
+		if (device_get_type(device) == DEVICE_TYPE_LE)
+			device_browse_primary(device, bonding->conn,
+						bonding->msg, FALSE);
+		else
+			device_browse_sdp(device, bonding->conn, bonding->msg,
+								NULL, FALSE);
 
 		bonding_request_free(bonding);
 	} else {
@@ -2641,6 +2736,7 @@ void device_register_services(DBusConnection *conn, struct btd_device *device,
 	device->services = attrib_client_register(conn, device, psm, NULL,
 								prim_list);
 	device->primaries = g_slist_concat(device->primaries, prim_list);
+	gatt_services_changed(device);
 }
 
 GSList *btd_device_get_primaries(struct btd_device *device)

@@ -7,7 +7,6 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
-	hciops.c \
 	gatt-example.c \
 	mgmtops.c \
 	service.c

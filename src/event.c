@@ -76,7 +76,7 @@ static gboolean get_adapter_and_device(bdaddr_t *src, bdaddr_t *dst,
 
 	*adapter = manager_find_adapter(src);
 	if (!*adapter) {
-		error("Unable to find matching adapter");
+		DBG("Unable to find matching adapter");
 		return FALSE;
 	}
 
@@ -88,7 +88,7 @@ static gboolean get_adapter_and_device(bdaddr_t *src, bdaddr_t *dst,
 		*device = adapter_find_device(*adapter, peer_addr);
 
 	if (create && !*device) {
-		error("Unable to get device object!");
+		DBG("Unable to get device object!");
 		return FALSE;
 	}
 
@@ -264,7 +264,7 @@ int btd_event_user_consent(bdaddr_t *sba, bdaddr_t *dba)
 		return -ENODEV;
 
 	return device_request_authentication(device, AUTH_TYPE_PAIRING_CONSENT,
-						0, pairing_consent_cb);
+						0, confirm_cb);
 }
 
 int btd_event_user_passkey(bdaddr_t *sba, bdaddr_t *dba)
@@ -500,12 +500,12 @@ static void update_lastused(bdaddr_t *sba, bdaddr_t *dba)
 	write_lastused_info(sba, dba, tm);
 }
 
-void btd_event_device_found(bdaddr_t *local, bdaddr_t *peer, uint32_t class,
-				int8_t rssi, uint8_t *data)
+void btd_event_device_found(bdaddr_t *local, bdaddr_t *peer, uint8_t type,
+		uint8_t le, uint32_t class, int8_t rssi, uint8_t *data)
 {
 	char filename[PATH_MAX + 1];
 	struct btd_adapter *adapter;
-	char local_addr[18], peer_addr[18], *alias, *name;
+	char local_addr[18], peer_addr[18], *alias, *name = NULL;
 	name_status_t name_status;
 	struct eir_data eir_data;
 	int err;
@@ -529,7 +529,7 @@ void btd_event_device_found(bdaddr_t *local, bdaddr_t *peer, uint32_t class,
 		write_remote_eir(local, peer, data);
 
 	/* the inquiry result can be triggered by NON D-Bus client */
-	if (main_opts.name_resolv && adapter_has_discov_sessions(adapter))
+	if (!le && main_opts.name_resolv && adapter_has_discov_sessions(adapter))
 		name_status = NAME_REQUIRED;
 	else
 		name_status = NAME_NOT_REQUIRED;
@@ -540,7 +540,7 @@ void btd_event_device_found(bdaddr_t *local, bdaddr_t *peer, uint32_t class,
 	create_name(filename, PATH_MAX, STORAGEDIR, local_addr, "names");
 	name = textfile_get(filename, peer_addr);
 
-	if (data)
+	if (data || le)
 		legacy = FALSE;
 	else if (name == NULL)
 		legacy = TRUE;
@@ -570,7 +570,7 @@ void btd_event_device_found(bdaddr_t *local, bdaddr_t *peer, uint32_t class,
 	}
 
 	adapter_update_found_devices(adapter, peer, rssi, class, dev_name,
-					alias, legacy, eir_data.services,
+					alias, legacy, le, eir_data.services,
 					name_status);
 
 	free_eir_data(&eir_data);
@@ -634,6 +634,7 @@ void btd_event_remote_name(bdaddr_t *local, bdaddr_t *peer, uint8_t status,
 	struct btd_device *device;
 	struct remote_dev_info match, *dev_info;
 
+	DBG("");
 	if (status == 0) {
 		if (!g_utf8_validate(name, -1, NULL)) {
 			int i;
@@ -686,18 +687,25 @@ proceed:
 
 int btd_event_link_key_notify(bdaddr_t *local, bdaddr_t *peer,
 				uint8_t *key, uint8_t key_type,
-				uint8_t pin_length)
+				uint8_t pin_length, uint8_t auth,
+				uint8_t dlen, uint8_t *data)
 {
 	struct btd_adapter *adapter;
 	struct btd_device *device;
+	uint32_t hash = 0;
 	int ret;
+
+	DBG("");
 
 	if (!get_adapter_and_device(local, peer, &adapter, &device, TRUE))
 		return -ENODEV;
 
 	DBG("storing link key of type 0x%02x", key_type);
 
-	ret = write_link_key(local, peer, key, key_type, pin_length);
+	if (key_type >= KEY_TYPE_LTK)
+		ret = write_le_key(local, peer, &hash, key, key_type, pin_length, auth, dlen, data);
+	else
+		ret = write_link_key(local, peer, key, key_type, pin_length);
 
 	if (ret == 0 && device_is_temporary(device))
 		device_set_temporary(device, FALSE);

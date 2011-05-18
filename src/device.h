@@ -50,6 +50,7 @@ void device_get_name(struct btd_device *device, char *name, size_t len);
 device_type_t device_get_type(struct btd_device *device);
 void device_remove(struct btd_device *device, gboolean remove_stored);
 gint device_address_cmp(struct btd_device *device, const gchar *address);
+gint device_hash_cmp(struct btd_device *device, const gchar *hash);
 int device_browse_primary(struct btd_device *device, DBusConnection *conn,
 				DBusMessage *msg, gboolean secure);
 int device_browse_sdp(struct btd_device *device, DBusConnection *conn,
@@ -81,6 +82,7 @@ DBusMessage *device_create_bonding(struct btd_device *device,
 				DBusConnection *conn, DBusMessage *msg,
 				const char *agent_path, uint8_t capability,
 				gboolean oob);
+char *device_type2text(device_type_t type);
 void device_remove_bonding(struct btd_device *device);
 void device_bonding_complete(struct btd_device *device, uint8_t status);
 void device_simple_pairing_complete(struct btd_device *device, uint8_t status);
