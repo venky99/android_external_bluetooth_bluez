@@ -1980,9 +1980,11 @@ static int add_ftp(sdp_session_t *session, svc_info_t *si)
 	sdp_profile_desc_t profile[1];
 	sdp_list_t *aproto, *proto[3];
 	sdp_record_t record;
+	uint16_t psm = si->psm;
 	uint8_t u8 = si->channel ? si->channel: 10;
 	sdp_data_t *channel;
 	int ret = 0;
+        sdp_data_t *goeppsm = NULL;
 
 	memset(&record, 0, sizeof(sdp_record_t));
 	record.handle = si->handle;
@@ -1995,8 +1997,13 @@ static int add_ftp(sdp_session_t *session, svc_info_t *si)
 	svclass_id = sdp_list_append(0, &ftrn_uuid);
 	sdp_set_service_classes(&record, svclass_id);
 
+	/*
+	 * Implicitly set FTP profile version to 1.2 when adding a record
+         * containing a PSM (for OBEX-over-L2CAP)
+	 */
+
 	sdp_uuid16_create(&profile[0].uuid, OBEX_FILETRANS_PROFILE_ID);
-	profile[0].version = 0x0100;
+	profile[0].version = psm ? 0x0102 : 0x0100;
 	pfseq = sdp_list_append(0, &profile[0]);
 	sdp_set_profile_descs(&record, pfseq);
 
@@ -2017,6 +2024,13 @@ static int add_ftp(sdp_session_t *session, svc_info_t *si)
 	aproto = sdp_list_append(0, apseq);
 	sdp_set_access_protos(&record, aproto);
 
+	if (psm) {
+		goeppsm = sdp_data_alloc(SDP_UINT16, &psm);
+		if (goeppsm) {
+			sdp_attr_add(&record, SDP_ATTR_GOEP_L2CAP_PSM, goeppsm);
+		}
+	}
+
 	sdp_set_info_attr(&record, "OBEX File Transfer", 0, 0);
 
 	if (sdp_device_record_register(session, &interface, &record, SDP_RECORD_PERSIST) < 0) {
@@ -2028,6 +2042,9 @@ static int add_ftp(sdp_session_t *session, svc_info_t *si)
 	printf("OBEX File Transfer service registered\n");
 
 end:
+	if (psm && goeppsm) {
+		sdp_data_free(goeppsm);
+	}
 	sdp_data_free(channel);
 	sdp_list_free(proto[0], 0);
 	sdp_list_free(proto[1], 0);
