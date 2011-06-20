@@ -1363,6 +1363,7 @@ static void io_capa_response(int index, void *ptr)
 	evt_io_capability_response *evt = ptr;
 	struct bt_conn *conn;
 	char da[18];
+	uint8_t local_auth;
 
 	ba2str(&evt->bdaddr, da);
 	DBG("hci%d IO capability response from %s", index, da);
@@ -1372,6 +1373,16 @@ static void io_capa_response(int index, void *ptr)
 		conn->rem_cap = evt->capability;
 		conn->rem_auth = evt->authentication;
 		conn->rem_oob_data = evt->oob_data;
+		if (!(conn->rem_auth & 0x01)) {
+			DBG("Remote auth is %d", conn->rem_auth);
+			get_auth_info(index, &evt->bdaddr, &local_auth);
+			DBG("local auth req is %d", local_auth);
+			local_auth = local_auth & 0xfe;
+			DBG("Writing local auth as %d", local_auth);
+			set_auth_requirements(&dev->bdaddr, &evt->bdaddr, &local_auth);
+			get_auth_info(index, &evt->bdaddr, &local_auth);
+			DBG("local auth req is %d", local_auth);
+		}
 	}
 }
 
