@@ -2255,6 +2255,10 @@ void device_bonding_complete(struct btd_device *device, uint8_t status)
 		agent_cancel(auth->agent);
 
 	if (status) {
+		if (status == 0x06) {
+			DBG("Removing device link key since status is %d", status);
+			device_remove_bonding(device);
+		}
 		device_cancel_authentication(device, TRUE);
 		device_cancel_bonding(device, status);
 		return;
