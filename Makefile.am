@@ -361,9 +361,9 @@ AM_YFLAGS = -d
 AM_CFLAGS = @DBUS_CFLAGS@ @GLIB_CFLAGS@ @CAPNG_CFLAGS@ \
 		-DBLUETOOTH_PLUGIN_BUILTIN -DPLUGINDIR=\""$(plugindir)"\"
 
-INCLUDES = -I$(builddir)/lib/bluetooth -I$(builddir)/src -I$(srcdir)/src \
-			-I$(srcdir)/audio -I$(srcdir)/sbc -I$(srcdir)/gdbus \
-			-I$(srcdir)/attrib -I$(srcdir)/btio
+INCLUDES = -I$(builddir)/lib -I$(builddir)/lib/bluetooth -I$(builddir)/src \
+			-I$(srcdir)/src -I$(srcdir)/audio -I$(srcdir)/sbc \
+			-I$(srcdir)/gdbus -I$(srcdir)/attrib -I$(srcdir)/btio
 
 if MCAP
 INCLUDES += -I$(builddir)/health
