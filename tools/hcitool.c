@@ -2910,6 +2910,75 @@ static void cmd_lecup(int dev_id, int argc, char **argv)
 	hci_close_dev(dd);
 }
 
+static struct option data_options[] = {
+	{ "help",	0, 0, 'h' },
+	{ 0, 0, 0, 0 }
+};
+
+static const char *data_help =
+	"Usage:\n"
+	"\tdata <handle> <flags> <length>\n"
+	"Example:\n"
+	"\tdata 0x101 0x3 200\n";
+
+static unsigned char data_buf[HCI_MAX_ACL_SIZE];
+
+static void cmd_data(int dev_id, int argc, char **argv)
+{
+	struct hci_filter flt;
+	int opt, dd;
+	uint16_t handle;
+	uint8_t flags;
+	uint16_t dlen;
+
+	for_each_opt(opt, data_options, NULL) {
+		switch (opt) {
+		default:
+			printf("%s", data_help);
+			return;
+		}
+	}
+	helper_arg(3, -1, &argc, &argv, data_help);
+
+	if (dev_id < 0)
+		dev_id = hci_get_route(NULL);
+
+	errno = 0;
+	handle = strtol(argv[0], NULL, 16);
+	flags = strtol(argv[1], NULL, 16);
+	dlen = strtol(argv[2], NULL, 10);
+	if (errno == ERANGE || (handle > 0xeff) || (flags > 0xf) || (dlen > HCI_MAX_ACL_SIZE)) {
+		printf("%s", cmd_help);
+		return;
+	}
+
+	dd = hci_open_dev(dev_id);
+	if (dd < 0) {
+		perror("Device open failed");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Setup filter */
+	hci_filter_clear(&flt);
+	hci_filter_set_ptype(HCI_EVENT_PKT, &flt);
+	hci_filter_all_events(&flt);
+	if (setsockopt(dd, SOL_HCI, HCI_FILTER, &flt, sizeof(flt)) < 0) {
+		perror("HCI filter setup failed");
+		exit(EXIT_FAILURE);
+	}
+
+	printf("< HCI Data: handle 0x%03x, flags 0x%x, dlen %d\n", handle, flags, dlen);
+	hex_dump("  ", 20, data_buf, dlen); fflush(stdout);
+
+	if (hci_send_data(dd, handle, flags, dlen, data_buf) < 0) {
+		perror("Send failed");
+		exit(EXIT_FAILURE);
+	}
+
+	hci_close_dev(dd);
+	return;
+}
+
 static struct {
 	char *cmd;
 	void (*func)(int dev_id, int argc, char **argv);
@@ -2947,6 +3016,7 @@ static struct {
 	{ "lecc",     cmd_lecc,    "Create a LE Connection"               },
 	{ "ledc",     cmd_ledc,    "Disconnect a LE Connection"           },
 	{ "lecup",    cmd_lecup,   "LE Connection Update"                 },
+	{ "data",     cmd_data,    "Send HCI data"                        },
 	{ NULL, NULL, 0 }
 };
 
@@ -2979,6 +3049,10 @@ int main(int argc, char *argv[])
 {
 	int opt, i, dev_id = -1;
 	bdaddr_t ba;
+
+	for (i = 0; i < sizeof(data_buf); i++) {
+		data_buf[i] = i % 256;
+	}
 
 	while ((opt=getopt_long(argc, argv, "+i:h", main_options, NULL)) != -1) {
 		switch (opt) {
