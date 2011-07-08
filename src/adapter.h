@@ -130,6 +130,8 @@ void adapter_mode_changed(struct btd_adapter *adapter, uint8_t scan_mode);
 void adapter_update_local_name(struct btd_adapter *adapter, const char *name);
 void adapter_service_insert(struct btd_adapter *adapter, void *rec);
 void adapter_service_remove(struct btd_adapter *adapter, void *rec);
+int conn_get_pending_sec_level(struct btd_device *device, uint8_t *pending_sec_level);
+
 void btd_adapter_class_changed(struct btd_adapter *adapter,
 							uint32_t new_class);
 void btd_adapter_pairable_changed(struct btd_adapter *adapter,
