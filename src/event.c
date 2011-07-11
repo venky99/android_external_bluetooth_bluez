@@ -713,6 +713,22 @@ int btd_event_link_key_notify(bdaddr_t *local, bdaddr_t *peer,
 	return ret;
 }
 
+void btd_event_device_set_temporary(bdaddr_t *local, bdaddr_t *peer)
+{
+	struct btd_adapter *adapter;
+	struct btd_device *device;
+
+	DBG(" ");
+
+	if (!get_adapter_and_device(local, peer, &adapter, &device, TRUE))
+		return -ENODEV;
+
+	if(!device_is_temporary(device)) {
+		DBG("Setting the device as temporary");
+		device_set_temporary(device, TRUE);
+	}
+
+}
 int hcid_dbus_get_oob_data(bdaddr_t *sba, bdaddr_t * dba)
 {
 	struct btd_adapter *adapter;

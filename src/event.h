@@ -42,4 +42,5 @@ int btd_event_user_passkey(bdaddr_t *sba, bdaddr_t *dba);
 int btd_event_user_notify(bdaddr_t *sba, bdaddr_t *dba, uint32_t passkey);
 int btd_event_link_key_notify(bdaddr_t *local, bdaddr_t *peer, uint8_t *key,
 					uint8_t key_type, uint8_t pin_length);
+void btd_event_device_set_temporary(bdaddr_t *local, bdaddr_t *peer);
 int hcid_dbus_get_oob_data(bdaddr_t *sba, bdaddr_t *dba);

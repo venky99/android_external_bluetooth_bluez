@@ -1006,6 +1006,9 @@ static void link_key_notify(int index, void *ptr)
 			status = HCI_MEMORY_FULL;
 
 		goto done;
+	} else {
+		DBG("link key is not stored, setting device as temporary");
+		btd_event_device_set_temporary(&dev->bdaddr, dba);
 	}
 
 done:
