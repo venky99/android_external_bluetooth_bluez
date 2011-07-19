@@ -13,7 +13,7 @@ LOCAL_SRC_FILES:= \
 	service.c
 
 LOCAL_CFLAGS:= \
-	-DVERSION=\"4.91\" \
+	-DVERSION=\"4.93\" \
 	-DBLUETOOTH_PLUGIN_BUILTIN \
 	-DSTORAGEDIR=\"/data/misc/bluetoothd\"
 

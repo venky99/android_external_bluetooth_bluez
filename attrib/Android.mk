@@ -11,7 +11,7 @@ LOCAL_SRC_FILES:= \
 	gattrib.c
 
 LOCAL_CFLAGS:= \
-	-DVERSION=\"4.91\" \
+	-DVERSION=\"4.93\" \
 	-DSTORAGEDIR=\"/data/misc/bluetoothd\" \
 	-DCONFIGDIR=\"/etc/bluetooth\" \
 	-DANDROID \
@@ -50,7 +50,7 @@ LOCAL_SRC_FILES:= \
 	gatttool.c
 
 LOCAL_CFLAGS:= \
-	-DVERSION=\"4.91\" -fpermissive
+	-DVERSION=\"4.93\" -fpermissive
 
 LOCAL_C_INCLUDES:=\
 	$(LOCAL_PATH)/../lib \
