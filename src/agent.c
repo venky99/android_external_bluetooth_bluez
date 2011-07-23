@@ -485,7 +485,7 @@ done:
 }
 
 static int pincode_request_new(struct agent_request *req, const char *device_path,
-				dbus_bool_t numeric, dbus_bool_t secure)
+				dbus_bool_t numeric)
 {
 	struct agent *agent = req->agent;
 
@@ -497,7 +497,6 @@ static int pincode_request_new(struct agent_request *req, const char *device_pat
 	}
 
 	dbus_message_append_args(req->msg, DBUS_TYPE_OBJECT_PATH, &device_path,
-					DBUS_TYPE_BOOLEAN, &secure,
 					DBUS_TYPE_INVALID);
 
 	if (dbus_connection_send_with_reply(connection, req->msg,
@@ -517,8 +516,6 @@ int agent_request_pincode(struct agent *agent, struct btd_device *device,
 	struct agent_request *req;
 	const gchar *dev_path = device_get_path(device);
 	int err;
-	uint8_t pending_sec_level = 0;
-	dbus_bool_t secure = FALSE;
 
 	if (agent->request)
 		return -EBUSY;
@@ -526,11 +523,7 @@ int agent_request_pincode(struct agent *agent, struct btd_device *device,
 	req = agent_request_new(agent, AGENT_REQUEST_PINCODE, cb,
 							user_data, destroy);
 
-	conn_get_pending_sec_level(device, &pending_sec_level);
-	DBG("Connection pending security level is %d", (int)pending_sec_level);
-	secure = (pending_sec_level == BT_SECURITY_HIGH);
-	DBG("Secure Pairing %d", secure);
-	err = pincode_request_new(req, dev_path, FALSE, secure);
+	err = pincode_request_new(req, dev_path, FALSE);
 	if (err < 0)
 		goto failed;
 

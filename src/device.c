@@ -969,35 +969,6 @@ int device_get_handle(struct btd_device *device, int dd, uint16_t *handle)
 	return err;
 }
 
-int conn_get_pending_sec_level(struct btd_device *device, uint8_t *pending_sec_level)
-{
-	struct hci_conn_info_req *cr;
-	int err = 0, dd;
-	uint16_t dev_id;
-	char addr[18];
-	bdaddr_t src;
-
-	adapter_get_address(device->adapter, &src);
-	ba2str(&src, addr);
-	dev_id = hci_devid(addr);
-
-	dd = hci_open_dev(dev_id);
-	cr = g_malloc0(sizeof(*cr) + sizeof(struct hci_conn_info));
-
-	if(cr == NULL) {
-		return  -ENOMEM;
-	}
-	cr->type = ACL_LINK;
-	bacpy(&cr->bdaddr, &device->bdaddr);
-
-	err = ioctl(dd, HCIGETCONNINFO, cr);
-	if (! err)
-		*pending_sec_level = cr->conn_info->pending_sec_level;
-	g_free(cr);
-
-	return err;
-}
-
 guint device_add_disconnect_watch(struct btd_device *device,
 				disconnect_watch watch, void *user_data,
 				GDestroyNotify destroy)
@@ -1862,7 +1833,6 @@ int device_browse_primary(struct btd_device *device, DBusConnection *conn,
 	adapter_get_address(adapter, &src);
 
 	sec_level = secure ? BT_IO_SEC_HIGH : BT_IO_SEC_LOW;
-	DBG("Security level is %d secure is %d", sec_level, secure);
 
 	io = bt_io_connect(BT_IO_L2CAP, gatt_connect_cb, req, NULL, NULL,
 				BT_IO_OPT_SOURCE_BDADDR, &src,

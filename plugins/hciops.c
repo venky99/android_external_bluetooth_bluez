@@ -865,39 +865,13 @@ static int get_auth_info(int index, bdaddr_t *bdaddr, uint8_t *auth)
 static void link_key_request(int index, bdaddr_t *dba)
 {
 	struct dev_info *dev = &devs[index];
-	struct btd_adapter *adapter;
-	struct btd_device *device;
 	struct link_key_info *key_info;
 	struct bt_conn *conn;
 	GSList *match;
-	int dd, err;
-	uint8_t pending_sec_level = 0, ssp_mode = 0;
-	uint32_t class;
-	struct hci_conn_info_req *cr;
 	char da[18];
 
 	ba2str(dba, da);
 	DBG("hci%d dba %s", index, da);
-
-	dd = hci_open_dev(index);
-	if (dd < 0)
-		return;
-
-	cr = g_malloc0(sizeof(*cr) + sizeof(struct hci_conn_info));
-	cr->type = ACL_LINK;
-	bacpy(&cr->bdaddr, dba);
-
-	err = ioctl(dd, HCIGETCONNINFO, cr);
-
-	if (err < 0) {
-		return;
-	}
-
-	pending_sec_level = cr->conn_info->pending_sec_level;
-	ssp_mode = cr->conn_info->ssp_mode;
-	g_free(cr);
-	DBG("Pending Security level is %d", (int)pending_sec_level);
-	DBG("Ssp mode is %d", (int)ssp_mode);
 
 	conn = get_connection(dev, dba);
 	if (conn->handle == 0)
@@ -917,17 +891,6 @@ static void link_key_request(int index, bdaddr_t *dba)
 
 	if (key_info == NULL || (!dev->debug_keys && key_info->type == 0x03)) {
 		/* Link key not found */
-		hci_send_cmd(dev->sk, OGF_LINK_CTL, OCF_LINK_KEY_NEG_REPLY,
-								6, dba);
-		return;
-	}
-
-	DBG("Type %d pending sec is %d pin lne %d", key_info->type, pending_sec_level,
-						key_info->pin_len);
-
-	if ((ssp_mode == 0) && (pending_sec_level == BT_SECURITY_HIGH) &&
-				(key_info->pin_len != 16)) {
-		DBG("Matching key not found");
 		hci_send_cmd(dev->sk, OGF_LINK_CTL, OCF_LINK_KEY_NEG_REPLY,
 								6, dba);
 		return;
@@ -3791,7 +3754,6 @@ static int hciops_create_bonding(int index, bdaddr_t *bdaddr, uint8_t io_cap)
 {
 	struct dev_info *dev = &devs[index];
 	BtIOSecLevel sec_level;
-	gboolean is_ssp_cap = FALSE;
 	struct bt_conn *conn;
 	GError *err = NULL;
 
@@ -3802,25 +3764,13 @@ static int hciops_create_bonding(int index, bdaddr_t *bdaddr, uint8_t io_cap)
 
 	conn->loc_cap = io_cap;
 
-	int err_eir = read_remote_eir(&dev->bdaddr, bdaddr, NULL);
-	DBG("Err is %d", err_eir);
-
-	if (err_eir != -ENOENT)
-		is_ssp_cap = TRUE;
-
-
 	/* If our IO capability is NoInputNoOutput use medium security
 	 * level (i.e. don't require MITM protection) else use high
 	 * security level */
-	if (is_ssp_cap == FALSE)
+	if (io_cap == 0x03)
 		sec_level = BT_IO_SEC_MEDIUM;
-	else {
-		if (io_cap == 0x03)
-			sec_level = BT_IO_SEC_MEDIUM;
-		else
-			sec_level = BT_IO_SEC_HIGH;
-	}
-	DBG("Sec level is %d ssp_cap is %d", sec_level, is_ssp_cap);
+	else
+		sec_level = BT_IO_SEC_HIGH;
 
 	conn->io = bt_io_connect(BT_IO_L2RAW, bonding_connect_cb, conn,
 					NULL, &err,
