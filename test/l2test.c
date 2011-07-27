@@ -1332,6 +1332,8 @@ int main(int argc, char *argv[])
 				socktype = SOCK_STREAM;
 			} else if (strcasecmp(optarg, "ertm") == 0)
 				rfcmode = L2CAP_MODE_ERTM;
+			else if (strcasecmp(optarg, "streaming") == 0)
+				rfcmode = L2CAP_MODE_STREAMING;
 			else
 				rfcmode = atoi(optarg);
 			break;
