@@ -603,6 +603,13 @@ typedef struct {
 #define LOGICAL_LINK_CANCEL_RP_SIZE 3
 
 #define OCF_FLOW_SPEC_MODIFY		0x003C
+typedef struct {
+	uint16_t	handle;
+	uint8_t		tx_flow[16];
+	uint8_t		rx_flow[16];
+} __attribute__ ((packed)) flow_spec_modify_cp;
+#define FLOW_SPEC_MODIFY_CP_SIZE 34
+
 
 /* Link Policy */
 #define OGF_LINK_POLICY		0x02
