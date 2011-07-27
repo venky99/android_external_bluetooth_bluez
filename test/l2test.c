@@ -332,6 +332,13 @@ static int do_connect(char *svr)
 		goto error;
 	}
 
+	/* Set AMP preference */
+	if ((rfcmode == L2CAP_MODE_ERTM || rfcmode == L2CAP_MODE_STREAMING) &&
+		setsockopt(sk, SOL_BLUETOOTH, BT_AMP_POLICY, &amp_pref, sizeof(amp_pref)) < 0) {
+		syslog(LOG_ERR, "Can't set L2CAP AMP preference: %s (%d)",
+							strerror(errno), errno);
+	}
+
 	/* Connect to remote device */
 	memset(&addr, 0, sizeof(addr));
 	addr.l2_family = AF_BLUETOOTH;
@@ -347,13 +354,6 @@ static int do_connect(char *svr)
 		syslog(LOG_ERR, "Can't connect: %s (%d)",
 							strerror(errno), errno);
 		goto error;
-	}
-
-	/* Set AMP preference */
-	if ((rfcmode == L2CAP_MODE_ERTM || rfcmode == L2CAP_MODE_STREAMING) &&
-		setsockopt(sk, SOL_BLUETOOTH, BT_AMP_POLICY, &amp_pref, sizeof(amp_pref)) < 0) {
-		syslog(LOG_ERR, "Can't set L2CAP AMP preference: %s (%d)",
-							strerror(errno), errno);
 	}
 
 	/* Get current options */
