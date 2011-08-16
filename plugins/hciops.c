@@ -160,6 +160,13 @@ static struct dev_info {
 	guint stop_scan_id;
 } *devs = NULL;
 
+struct oob_availability_req {
+	bdaddr_t bdaddr;
+	uint8_t auth;
+	uint8_t capa;
+	int index;
+};
+
 static inline int get_state(int index)
 {
 	struct dev_info *dev = &devs[index];
@@ -1236,8 +1243,11 @@ static void remote_oob_data_request(int index, bdaddr_t *bdaddr)
 				REMOTE_OOB_DATA_REPLY_CP_SIZE, &cp);
 
 	} else {
-		hci_send_cmd(dev->sk, OGF_LINK_CTL,
+		if (hcid_dbus_get_oob_data(&dev->bdaddr, bdaddr) < 0) {
+			DBG("Error while requesting OOB data");
+			hci_send_cmd(dev->sk, OGF_LINK_CTL,
 				OCF_REMOTE_OOB_DATA_NEG_REPLY, 6, bdaddr);
+		}
 	}
 }
 
@@ -1349,6 +1359,30 @@ done:
 	return 0;
 }
 
+static void oob_availability_cb(struct agent *agent, DBusError *err,
+                                        void *user_data)
+{
+	struct oob_availability_req *oob = user_data;
+	struct dev_info *dev = &devs[oob->index];
+	io_capability_reply_cp cp;
+	memset(&cp, 0, sizeof(cp));
+	bacpy(&cp.bdaddr, &oob->bdaddr);
+	cp.capability = oob->capa;
+	cp.authentication = oob->auth;
+	DBG(" ");
+	if (err) {
+		DBG("OOB data does not present for remote device");
+		cp.oob_data = 0x00;
+		hci_send_cmd(dev->sk, OGF_LINK_CTL, OCF_IO_CAPABILITY_REPLY,
+					IO_CAPABILITY_REPLY_CP_SIZE, &cp);
+	} else {
+		DBG("OOB data present for remote device");
+		cp.oob_data = 0x01;
+		hci_send_cmd(dev->sk, OGF_LINK_CTL, OCF_IO_CAPABILITY_REPLY,
+					IO_CAPABILITY_REPLY_CP_SIZE, &cp);
+	}
+}
+
 static void io_capa_request(int index, void *ptr)
 {
 	struct dev_info *dev = &devs[index];
@@ -1389,9 +1423,42 @@ static void io_capa_request(int index, void *ptr)
 		if ((conn->bonding_initiator || conn->rem_oob_data == 0x01) &&
 				match)
 			cp.oob_data = 0x01;
-		else
-			cp.oob_data = 0x00;
+		else {
+			DBG("OOB data, querying the frameworks");
+			struct btd_adapter *adapter =
+					manager_find_adapter_by_id(index);
+			struct btd_device *device =
+					adapter_find_device(adapter, da);
+			struct oob_availability_req *oob_req;
+			struct agent *agent = device_get_agent(device);
+			int ret;
+			gboolean oob = agent_get_oob_capability(agent);
+			DBG("agent's oob capability is %d", oob);
 
+			// if pairing is not locally initiated
+			if (oob) {
+				oob_req =
+					g_new0(struct oob_availability_req, 1);
+				bdaddr_t bdaddr;
+				device_get_address(device, &bdaddr);
+				bacpy(&oob_req->bdaddr, &bdaddr);
+				oob_req->auth = auth;
+				oob_req->capa = cap;
+				oob_req->index = index;
+				DBG("Requesting for oob availability");
+				ret = device_request_oob_availability(device,
+							oob_availability_cb,
+                                                        oob_req);
+				if (ret < 0) {
+					DBG("error reading oob availability");
+					g_free(oob_req);
+					cp.oob_data = 0x00;
+					goto done;
+				}
+				return;
+			}
+		}
+done:
 		hci_send_cmd(dev->sk, OGF_LINK_CTL, OCF_IO_CAPABILITY_REPLY,
 					IO_CAPABILITY_REPLY_CP_SIZE, &cp);
 	}

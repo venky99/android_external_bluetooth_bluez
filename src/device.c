@@ -1639,6 +1639,9 @@ send_reply:
 						"CreatePairedDevice"))
 		create_device_reply(device, req);
 	else if (dbus_message_is_method_call(req->msg, ADAPTER_INTERFACE,
+						"CreatePairedDeviceOutOfBand"))
+		create_device_reply(device, req);
+	else if (dbus_message_is_method_call(req->msg, ADAPTER_INTERFACE,
 						"CreateDevice")) {
 		if (err < 0) {
 			DBusMessage *reply;

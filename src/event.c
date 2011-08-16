@@ -59,12 +59,6 @@
 #include "event.h"
 #include "sdpd.h"
 
-struct oob_availability_req {
-        struct btd_device *device;
-        uint8_t auth;
-        uint8_t capa;
-};
-
 struct eir_data {
 	GSList *services;
 	int flags;
@@ -209,17 +203,15 @@ static void oob_data_cb(struct  agent *agent, DBusError *err, uint8_t *hash,
 	memset(&cp, 0, sizeof(cp));
 	bacpy(&cp.bdaddr, &dba);
 
-	memcpy(&cp.hash, hash, 16);
-	memcpy(&cp.randomizer, randomizer, 16);
-
 	if (err)
-                hci_send_cmd(dd, OGF_LINK_CTL, OCF_REMOTE_OOB_DATA_NEG_REPLY,
-                                6, &dba);
-
-	else
-                hci_send_cmd(dd, OGF_LINK_CTL, OCF_REMOTE_OOB_DATA_REPLY,
-                                REMOTE_OOB_DATA_REPLY_CP_SIZE, &cp);
-
+		hci_send_cmd(dd, OGF_LINK_CTL, OCF_REMOTE_OOB_DATA_NEG_REPLY,
+						6, &dba);
+	else {
+		memcpy(&cp.hash, hash, 16);
+		memcpy(&cp.randomizer, randomizer, 16);
+		hci_send_cmd(dd, OGF_LINK_CTL, OCF_REMOTE_OOB_DATA_REPLY,
+						REMOTE_OOB_DATA_REPLY_CP_SIZE, &cp);
+	}
 	hci_close_dev(dd);
 }
 
