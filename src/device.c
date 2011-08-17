@@ -454,6 +454,26 @@ static DBusMessage *set_trust(DBusConnection *conn, DBusMessage *msg,
 	return dbus_message_new_method_return(msg);
 }
 
+static DBusMessage *set_class(DBusConnection *conn, DBusMessage *msg,
+					uint32_t value, void *data)
+{
+	struct btd_device *device = data;
+	struct btd_adapter *adapter = device->adapter;
+	bdaddr_t src;
+	int err;
+	DBG("set cod %d", (int)value);
+	adapter_get_address(adapter, &src);
+	err = write_remote_class(&src, &device->bdaddr, value);
+	if (err < 0)
+		return btd_error_failed(msg, strerror(-err));
+
+	emit_property_changed(conn, dbus_message_get_path(msg),
+				DEVICE_INTERFACE, "Class",
+				DBUS_TYPE_UINT32, &value);
+
+	return dbus_message_new_method_return(msg);
+}
+
 static void driver_remove(struct btd_device_driver *driver,
 						struct btd_device *device)
 {
@@ -602,6 +622,13 @@ static DBusMessage *set_property(DBusConnection *conn,
 		dbus_message_iter_get_basic(&sub, &value);
 
 		return set_blocked(conn, msg, value, data);
+	} else if (g_str_equal("Class", property)) {
+		dbus_uint32_t value;
+		if (dbus_message_iter_get_arg_type(&sub) != DBUS_TYPE_UINT32)
+			return btd_error_invalid_args(msg);
+		dbus_message_iter_get_basic(&sub, &value);
+		DBG("Set cod %d", (int)value);
+		return set_class(conn, msg, value, data);
 	}
 
 	return btd_error_invalid_args(msg);
