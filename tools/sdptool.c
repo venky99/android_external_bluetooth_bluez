@@ -2055,12 +2055,10 @@ end:
 	return ret;
 }
 
-static int add_mas(sdp_session_t *session, svc_info_t *si)
+static int add_mas(sdp_session_t *session, svc_info_t *si, uint16_t masid, uint8_t sprtd_msg)
 {
 	sdp_list_t *svclass_id, *pfseq, *apseq, *root;
 	uuid_t root_uuid, ftrn_uuid, l2cap_uuid, rfcomm_uuid, obex_uuid;
-	uint16_t masid;
-	uint8_t  sprtd_msg;
 	sdp_profile_desc_t profile[1];
 	sdp_list_t *aproto, *proto[3];
 	sdp_record_t record;
@@ -2101,11 +2099,9 @@ static int add_mas(sdp_session_t *session, svc_info_t *si)
 	pfseq = sdp_list_append(0, &profile[0]);
 	sdp_set_profile_descs(&record, pfseq);
 
-	masid = 0x0;
 	sdp_attr_add_new(&record, SDP_ATTR_MAS_INSTANCE_ID, SDP_UINT8,
 							&masid);
 
-	sprtd_msg = 0x0F;
 	sdp_attr_add_new(&record, SDP_ATTR_SUPPORTED_MESSAGE_TYPES, SDP_UINT8,
 							&sprtd_msg);
 
@@ -2128,6 +2124,16 @@ end:
 	sdp_list_free(aproto, 0);
 
 	return ret;
+}
+
+static int add_mas1(sdp_session_t *session, svc_info_t *si)
+{
+	return add_mas(session, si, 1, 0x01);
+}
+
+static int add_mas0(sdp_session_t *session, svc_info_t *si)
+{
+	return add_mas(session, si, 0, 0x0E);
 }
 
 static int add_directprint(sdp_session_t *session, svc_info_t *si)
@@ -3685,7 +3691,8 @@ struct {
 	{ "OPUSH",	OBEX_OBJPUSH_SVCLASS_ID,	add_opush	},
 	{ "FTP",	OBEX_FILETRANS_SVCLASS_ID,	add_ftp		},
 	{ "PRINT",	DIRECT_PRINTING_SVCLASS_ID,	add_directprint	},
-        { "MAS",        OBEX_MAP_SVCLASS_ID,            add_mas         },
+	{ "MAS0",	OBEX_MAP_SVCLASS_ID,		add_mas0	},
+	{ "MAS1",	OBEX_MAP_SVCLASS_ID,		add_mas1	},
 
 	{ "HS",		HEADSET_SVCLASS_ID,		add_headset	},
 	{ "HSAG",	HEADSET_AGW_SVCLASS_ID,		add_headset_ag	},
