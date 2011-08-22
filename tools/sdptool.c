@@ -1763,7 +1763,7 @@ static int add_simaccess(sdp_session_t *session, svc_info_t *si)
 	sdp_set_service_classes(&record, svclass_id);
 
 	sdp_uuid16_create(&profile.uuid, SAP_PROFILE_ID);
-	profile.version = 0x0101;
+	profile.version = 0x0102;
 	pfseq = sdp_list_append(0, &profile);
 	sdp_set_profile_descs(&record, pfseq);
 
