@@ -1258,6 +1258,41 @@ static gboolean discovery_cb(gpointer user_data)
 	return FALSE;
 }
 
+static DBusMessage *adapter_list_connection(DBusConnection *conn,
+						DBusMessage *msg, void *data)
+{
+
+	struct session_req *req;
+	struct btd_adapter *adapter = data;
+	DBusMessage *reply;
+	int err;
+	int32_t nconn=0;
+	GSList *l, *conns;
+
+	err = adapter_ops->get_conn_list(adapter->dev_id, &conns);
+	if (err < 0) {
+		error("Unable to fetch existing connections: %s (%d)",
+				strerror(-err), -err);
+		nconn = -1;
+		goto done;
+	}
+
+	for (l = conns; l != NULL; l = g_slist_next(l)) {
+		++nconn;
+		DBG("Number of Connections = %d",nconn);
+	}
+
+	g_slist_foreach(conns, (GFunc) g_free, NULL);
+	g_slist_free(conns);
+
+done:
+	reply = dbus_message_new_method_return(msg);
+	dbus_message_append_args(reply,
+			DBUS_TYPE_INT32, &nconn,
+			DBUS_TYPE_INVALID);
+
+	return reply;
+}
 static DBusMessage *adapter_start_discovery(DBusConnection *conn,
 						DBusMessage *msg, void *data)
 {
@@ -2167,6 +2202,7 @@ static GDBusMethodTable adapter_methods[] = {
 						G_DBUS_METHOD_FLAG_ASYNC},
 	{ "ReleaseSession",	"",	"",	release_session		},
 	{ "StartDiscovery",	"",	"",	adapter_start_discovery },
+	{ "ListConnection",	"",	"i",	adapter_list_connection},
 	{ "StopDiscovery",	"",	"",	adapter_stop_discovery,
 						G_DBUS_METHOD_FLAG_ASYNC},
 	{ "ListDevices",	"",	"ao",	list_devices,
