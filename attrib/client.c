@@ -1446,3 +1446,21 @@ void attrib_client_unregister(struct btd_device *device)
 
 	gatt_service_free(gatt);
 }
+
+void attrib_client_disconnect(struct btd_device *device) {
+	GSList *l;struct gatt_service *gatt;
+
+	DBG("");
+
+	if (gatt_services == NULL)
+		return;
+
+	l = g_slist_find_custom(gatt_services, device, gatt_dev_cmp);
+	if (!l)
+		return;
+
+	gatt = l->data;
+
+	attrib_disconnect(gatt);
+
+}

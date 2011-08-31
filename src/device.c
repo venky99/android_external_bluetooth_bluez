@@ -1015,6 +1015,9 @@ void device_remove_connection(struct btd_device *device, DBusConnection *conn)
 	emit_property_changed(conn, device->path,
 					DEVICE_INTERFACE, "Connected",
 					DBUS_TYPE_BOOLEAN, &device->connected);
+
+	attrib_client_disconnect(device);
+
 }
 
 int device_get_handle(struct btd_device *device, int dd, uint16_t *handle)
