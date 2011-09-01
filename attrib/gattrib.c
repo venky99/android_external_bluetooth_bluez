@@ -340,11 +340,6 @@ static gboolean received_data(GIOChannel *io, GIOCondition cond, gpointer data)
 
 	DBG(" io: %p, cond: %d, data: %p", io, cond, data);
 
-	if (attrib->timeout_watch > 0) {
-		g_source_remove(attrib->timeout_watch);
-		attrib->timeout_watch = 0;
-	}
-
 	if (cond & (G_IO_HUP | G_IO_ERR | G_IO_NVAL)) {
 		attrib->read_watch = 0;
 		if (attrib->disconnect)
@@ -362,6 +357,12 @@ static gboolean received_data(GIOChannel *io, GIOCondition cond, gpointer data)
 
 	iostat = g_io_channel_read_chars(io, (gchar *) buf, sizeof(buf),
 								&len, NULL);
+
+	if (attrib->timeout_watch > 0 && is_response(buf[0]) == TRUE) {
+		g_source_remove(attrib->timeout_watch);
+		attrib->timeout_watch = 0;
+	}
+
 	if (iostat != G_IO_STATUS_NORMAL) {
 		status = ATT_ECODE_IO;
 		goto done;
