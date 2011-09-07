@@ -57,6 +57,8 @@
 #include <bluetooth/mgmt.h>
 #endif
 
+#include "storage.h"
+
 #define MGMT_BUF_SIZE 1024
 #define error DBG
 
@@ -2043,6 +2045,8 @@ static int mgmt_create_bonding(int index, bdaddr_t *bdaddr, uint8_t io_cap)
 	struct mgmt_hdr *hdr = (void *) buf;
 	struct mgmt_cp_pair_device *cp = (void *) &buf[sizeof(*hdr)];
 	char addr[18];
+	struct controller_info *info;
+	int err_eir = 0;
 
 	ba2str(bdaddr, addr);
 	DBG("hci%d bdaddr %s io_cap 0x%02x", index, addr, io_cap);
@@ -2054,6 +2058,16 @@ static int mgmt_create_bonding(int index, bdaddr_t *bdaddr, uint8_t io_cap)
 
 	bacpy(&cp->bdaddr, bdaddr);
 	cp->io_cap = io_cap;
+	info = &controllers[index];
+	err_eir = read_remote_eir(&info->bdaddr, bdaddr, NULL);
+	DBG("Err is %d", err_eir);
+
+	if (err_eir != -ENOENT)
+		cp->ssp_cap = 1;
+	else
+		cp->ssp_cap = 0;
+
+	DBG("ssp cap is %d", cp->ssp_cap);
 
 	if (write(mgmt_sock, &buf, sizeof(buf)) < 0)
 		return -errno;
