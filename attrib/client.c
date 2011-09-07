@@ -690,7 +690,7 @@ static void gatt_write_cli_conf_resp(guint8 status, const guint8 *pdu,
 				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_HIGH,
 				BT_IO_OPT_INVALID)) {
 			gatt_read_char(gatt->attrib, chr->handle, 0,
-					gatt_write_char_resp, current);
+					gatt_write_cli_conf_resp, current);
 			return;
 		}
 	} else {
@@ -705,15 +705,6 @@ static void gatt_write_cli_conf_resp(guint8 status, const guint8 *pdu,
 
 	g_attrib_unref(gatt->attrib);
 }
-
-/*
-static void gatt_write_cli_conf_resp(guint8 status, const guint8 *pdu,
-					guint16 len, gpointer user_data)
-{
-	DBG("Gatt Write Cli Conf Response Recv, status = %d", status);
-
-}
-*/
 
 static DBusMessage *set_value(DBusConnection *conn, DBusMessage *msg,
 			DBusMessageIter *iter, struct characteristic *chr)
