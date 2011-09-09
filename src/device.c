@@ -110,6 +110,8 @@ struct browse_req {
 	int search_uuid;
 	int reconnect_attempt;
 	guint listener_id;
+	guint sdp_timer_id;
+	struct sdp_timeout_data *sdata;
 };
 
 struct btd_device {
@@ -160,8 +162,21 @@ static GSList *device_drivers = NULL;
 
 static void browse_request_free(struct browse_req *req)
 {
+	struct sdp_timeout_data *sdata = req->sdata;
 	if (req->listener_id)
 		g_dbus_remove_watch(req->conn, req->listener_id);
+
+	if (req->sdp_timer_id) {
+		DBG("Removing sdp timer");
+		g_source_remove(req->sdp_timer_id);
+		req->sdp_timer_id = 0;
+		if (sdata) {
+			DBG("Freeing sdp timeout data");
+			g_free(sdata);
+			req->sdata = NULL;
+		}
+	}
+
 	if (req->msg)
 		dbus_message_unref(req->msg);
 	if (req->conn)
@@ -1661,9 +1676,22 @@ static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 {
 	struct browse_req *req = user_data;
 	struct btd_device *device = req->device;
+	struct sdp_timeout_data *sdata = req->sdata;
 	char addr[18];
 
 	ba2str(&device->bdaddr, addr);
+	DBG(" ");
+
+	if (req->sdp_timer_id) {
+		DBG("Removing sdp timer");
+		g_source_remove(req->sdp_timer_id);
+		req->sdp_timer_id = 0;
+		if (sdata) {
+			DBG("Freeing sdp timeout data");
+			g_free(sdata);
+			req->sdata = NULL;
+		}
+	}
 
 	if (err < 0) {
 		error("%s: error updating services: %s (%d)",
@@ -1750,8 +1778,20 @@ static void browse_cb(sdp_list_t *recs, int err, gpointer user_data)
 	struct browse_req *req = user_data;
 	struct btd_device *device = req->device;
 	struct btd_adapter *adapter = device->adapter;
+	struct sdp_timeout_data *sdata = req->sdata;
 	bdaddr_t src;
 	uuid_t uuid;
+
+	if (req->sdp_timer_id) {
+		DBG("Removing sdp timer");
+		g_source_remove(req->sdp_timer_id);
+		req->sdp_timer_id = 0;
+		if (sdata) {
+			DBG("Freeing sdp timeout data");
+			g_free(sdata);
+			req->sdata = NULL;
+		}
+	}
 
 	/* If we have a valid response and req->search_uuid == 2, then L2CAP
 	 * UUID & PNP searching was successful -- we are done */
@@ -1802,8 +1842,10 @@ static gboolean sdp_timeout(struct sdp_timeout_data *sdata)
 	bdaddr_t src;
 	char peer_addr[18];
 	const char *paddr =  peer_addr;
+	struct browse_req *req = sdata->req;
 
 	DBG("sdp_timeout");
+	req->sdp_timer_id = 0;
 	ba2str(&sdata->dst, peer_addr);
 	device = adapter_find_device(adapter, paddr);
 	if (device != NULL){
@@ -1822,6 +1864,7 @@ static gboolean sdp_timeout(struct sdp_timeout_data *sdata)
 	DBG("sdp_timeout exit");
 	browse_cb(NULL, -ETIMEDOUT, (void *)sdata->req);
 	g_free(sdata);
+	req->sdata = NULL;
 	return FALSE;
 }
 
@@ -2039,7 +2082,8 @@ int device_browse_sdp(struct btd_device *device, DBusConnection *conn,
 	sdata->adapter = adapter;
 	bacpy(&sdata->dst, &device->bdaddr);
 	sdata->req = req;
-	g_timeout_add_seconds(SDP_TIMEOUT,
+	req->sdata = sdata;
+	req->sdp_timer_id = g_timeout_add_seconds(SDP_TIMEOUT,
 					(GSourceFunc) sdp_timeout,
 					sdata);
 
