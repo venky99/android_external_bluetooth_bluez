@@ -455,7 +455,7 @@ static void mgmt_device_connected(int sk, uint16_t index, void *buf, size_t len)
 
 	info = &controllers[index];
 
-	btd_event_conn_complete(&info->bdaddr, &ev->bdaddr);
+	btd_event_conn_complete(&info->bdaddr, &ev->bdaddr, ev->le);
 }
 
 static void mgmt_device_disconnected(int sk, uint16_t index, void *buf,

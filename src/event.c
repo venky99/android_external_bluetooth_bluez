@@ -748,7 +748,7 @@ int hcid_dbus_get_oob_data(bdaddr_t *sba, bdaddr_t * dba)
 						oob_data_cb);
 }
 
-void btd_event_conn_complete(bdaddr_t *local, bdaddr_t *peer)
+void btd_event_conn_complete(bdaddr_t *local, bdaddr_t *peer, uint8_t le)
 {
 	struct btd_adapter *adapter;
 	struct btd_device *device;
@@ -758,7 +758,7 @@ void btd_event_conn_complete(bdaddr_t *local, bdaddr_t *peer)
 
 	update_lastused(local, peer);
 
-	adapter_add_connection(adapter, device);
+	adapter_add_connection(adapter, device, le);
 }
 
 void btd_event_conn_failed(bdaddr_t *local, bdaddr_t *peer, uint8_t status)

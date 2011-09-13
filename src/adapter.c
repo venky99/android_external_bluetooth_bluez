@@ -1128,6 +1128,8 @@ void adapter_service_insert(struct btd_adapter *adapter, void *r)
 	sdp_record_t *rec = r;
 	gboolean new_uuid;
 
+	DBG("%p %p", adapter, r);
+
 	if (sdp_list_find(adapter->services, &rec->svclass, uuid_cmp) == NULL)
 		new_uuid = TRUE;
 	else
@@ -2660,7 +2662,7 @@ static void load_connections(struct btd_adapter *adapter)
 
 		device = adapter_get_device(connection, adapter, address);
 		if (device)
-			adapter_add_connection(adapter, device);
+			adapter_add_connection(adapter, device, FALSE);
 	}
 
 	g_slist_foreach(conns, (GFunc) g_free, NULL);
@@ -3582,14 +3584,14 @@ struct agent *adapter_get_agent(struct btd_adapter *adapter)
 }
 
 void adapter_add_connection(struct btd_adapter *adapter,
-						struct btd_device *device)
+					struct btd_device *device, uint8_t le)
 {
 	if (g_slist_find(adapter->connections, device)) {
 		error("Device is already marked as connected");
 		return;
 	}
 
-	device_add_connection(device, connection);
+	device_add_connection(device, connection, le);
 
 	adapter->connections = g_slist_append(adapter->connections, device);
 }

@@ -710,6 +710,9 @@ static void discover_services_reply(struct browse_req *req, int err,
 	DBusMessageIter iter, dict;
 	sdp_list_t *seq;
 
+	if (!req->msg)
+		return;
+
 	if (err) {
 		const char *err_if;
 
@@ -973,7 +976,8 @@ gboolean device_is_connected(struct btd_device *device)
 	return device->connected;
 }
 
-void device_add_connection(struct btd_device *device, DBusConnection *conn)
+void device_add_connection(struct btd_device *device, DBusConnection *conn,
+								uint8_t le)
 {
 	if (device->connected) {
 		char addr[18];
@@ -983,6 +987,7 @@ void device_add_connection(struct btd_device *device, DBusConnection *conn)
 	}
 
 	device->connected = TRUE;
+	device->type = le ? DEVICE_TYPE_LE : DEVICE_TYPE_BREDR;
 
 	emit_property_changed(conn, device->path,
 					DEVICE_INTERFACE, "Connected",
@@ -1649,7 +1654,11 @@ static void create_device_reply(struct btd_device *device, struct browse_req *re
 {
 	DBusMessage *reply;
 
+	if (!req->msg)
+		return;
+
 	reply = dbus_message_new_method_return(req->msg);
+
 	if (!reply)
 		return;
 
@@ -1941,16 +1950,15 @@ static void primary_cb(GSList *services, guint8 status, gpointer user_data)
 	struct btd_device *device = req->device;
 	GSList *l, *uuids = NULL;
 
+	if (!req->msg)
+		goto done;
+
 	if (status) {
 		DBusMessage *reply;
 		reply = btd_error_failed(req->msg, att_ecode2str(status));
 		g_dbus_send_message(req->conn, reply);
 		goto done;
 	}
-
-#ifdef BGIX
-	services_changed(device);
-#endif
 
 	device_set_temporary(device, FALSE);
 

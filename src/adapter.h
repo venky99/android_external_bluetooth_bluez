@@ -142,7 +142,7 @@ void btd_adapter_pairable_changed(struct btd_adapter *adapter,
 
 struct agent *adapter_get_agent(struct btd_adapter *adapter);
 void adapter_add_connection(struct btd_adapter *adapter,
-						struct btd_device *device);
+					struct btd_device *device, uint8_t le);
 void adapter_remove_connection(struct btd_adapter *adapter,
 						struct btd_device *device);
 gboolean adapter_has_discov_sessions(struct btd_adapter *adapter);
