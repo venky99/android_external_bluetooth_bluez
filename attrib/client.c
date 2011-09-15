@@ -489,18 +489,9 @@ static void update_char_value(guint8 status, const guint8 *pdu,
 		prim->discovery_timer = 0;
 
 		if (current->last) {
-
-			if (status == 0) {
-				g_dbus_send_message(gatt->conn, chr->prim->discovery_reply);
-			} else {
-				reply = btd_error_failed(prim->discovery_msg,
-										 "Discover characteristic failed");
-				g_dbus_send_message(gatt->conn, reply);
-			}
-
+			g_dbus_send_message(gatt->conn, chr->prim->discovery_reply);
 			prim->discovery_reply = NULL;
 			prim->discovery_msg = NULL;
-
 		} else {
 			prim->discovery_timer = g_timeout_add_seconds(GATT_TIMEOUT,
 													stop_discovery, prim);
