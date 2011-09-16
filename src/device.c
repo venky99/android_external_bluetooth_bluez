@@ -1981,10 +1981,21 @@ static void gatt_connect_cb(GIOChannel *io, GError *gerr, gpointer user_data)
 
 		DBG("%s", gerr->message);
 
-		reply = btd_error_failed(req->msg, gerr->message);
-		g_dbus_send_message(req->conn, reply);
-
 		device->browse = NULL;
+
+		if (req->msg) {
+			if (dbus_message_is_method_call(req->msg, ADAPTER_INTERFACE,
+											"CreateDevice") ||
+				dbus_message_is_method_call(req->msg, ADAPTER_INTERFACE,
+											"CreatePairedDevice")) {
+				struct btd_adapter *adapter = device->adapter;
+				adapter_remove_device(req->conn, adapter, device, TRUE);
+			}
+
+			reply = btd_error_failed(req->msg, gerr->message);
+			g_dbus_send_message(req->conn, reply);
+		}
+
 		browse_request_free(req);
 
 		return;
