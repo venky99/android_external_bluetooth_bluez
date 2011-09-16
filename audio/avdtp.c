@@ -1201,7 +1201,8 @@ void avdtp_unref(struct avdtp *session)
 			struct audio_device *dev;
 			dev = manager_get_device(&session->server->src,
 							&session->dst, FALSE);
-			audio_device_cancel_authorization(dev, auth_cb,
+			if (dev)
+				audio_device_cancel_authorization(dev, auth_cb,
 								session);
 			g_io_channel_shutdown(session->io, TRUE, NULL);
 			g_io_channel_unref(session->io);
