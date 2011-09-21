@@ -750,6 +750,9 @@ int write_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, unsigned char 
 
 	free(newstr);
 
+	if (!err)
+		*hash = this_hash;
+
 	return err;
 }
 
@@ -946,6 +949,8 @@ uint32_t read_le_hash(bdaddr_t *local, bdaddr_t *peer, uint8_t *mid, uint8_t len
 	uint32_t hash = 0;
 
 	create_filename(filename, PATH_MAX, local, "lekeys");
+
+	create_file(filename, S_IRUSR | S_IWUSR);
 
 	/* Obtain hash from Addr */
 	if (peer) {

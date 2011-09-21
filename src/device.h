@@ -48,6 +48,8 @@ struct btd_device *device_create(DBusConnection *conn,
 void device_set_name(struct btd_device *device, const char *name);
 void device_get_name(struct btd_device *device, char *name, size_t len);
 device_type_t device_get_type(struct btd_device *device);
+uint32_t device_get_hash(struct btd_device *device);
+void device_set_hash(struct btd_device *device, uint32_t hash);
 void device_remove(struct btd_device *device, gboolean remove_stored);
 gint device_address_cmp(struct btd_device *device, const gchar *address);
 gint device_hash_cmp(struct btd_device *device, const gchar *hash);

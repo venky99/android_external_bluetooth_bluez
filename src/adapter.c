@@ -2414,8 +2414,7 @@ static void create_stored_device_from_linkkeys(char *key, char *value,
 	}
 }
 
-static void create_stored_device_from_lekeys(char *key, char *value,
-							void *user_data)
+static void read_used_le_keys(char *key, char *value, void *user_data)
 {
 	struct adapter_keys *keys = user_data;
 	struct btd_adapter *adapter = keys->adapter;
@@ -2425,18 +2424,9 @@ static void create_stored_device_from_lekeys(char *key, char *value,
 	if (strcmp(key, "lasthash") == 0)
 		return;
 
-	get_le_key_info(user_data, key, value);
-
 	if (g_slist_find_custom(adapter->devices, key,
 					(GCompareFunc) device_hash_cmp))
-		return;
-
-	DBG("%s", key);
-	device = device_create(connection, adapter, value, DEVICE_TYPE_LE);
-	if (device) {
-		device_set_temporary(device, FALSE);
-		adapter->devices = g_slist_append(adapter->devices, device);
-	}
+		get_le_key_info(user_data, key, value);
 }
 
 static void create_stored_device_from_blocked(char *key, char *value,
@@ -2573,7 +2563,7 @@ static void load_devices(struct btd_adapter *adapter)
 	textfile_foreach(filename, create_stored_device_from_linkkeys, &keys);
 
 	create_name(filename, PATH_MAX, STORAGEDIR, srcaddr, "lekeys");
-	textfile_foreach(filename, create_stored_device_from_lekeys, &keys);
+	textfile_foreach(filename, read_used_le_keys, &keys);
 
 	err = adapter_ops->load_keys(adapter->dev_id, keys.keys,
 							main_opts.debug_keys);

@@ -1166,9 +1166,6 @@ struct btd_device *device_create(DBusConnection *conn,
 
 	if (read_link_key(&src, &device->bdaddr, NULL, NULL) == 0)
 		device->paired = TRUE;
-	else if (read_le_key(&src, &device->bdaddr, &device->hash, NULL, NULL,
-				NULL, 0, NULL, NULL, 0) == 0)
-		device->paired = TRUE;
 
 	return btd_device_ref(device);
 }
@@ -1204,6 +1201,16 @@ device_type_t device_get_type(struct btd_device *device)
 	return device->type;
 }
 
+uint32_t device_get_hash(struct btd_device *device)
+{
+	return device->hash;
+}
+
+void device_set_hash(struct btd_device *device, uint32_t hash)
+{
+	device->hash = hash;
+}
+
 void device_remove_bonding(struct btd_device *device)
 {
 	char filename[PATH_MAX + 1];
@@ -1232,10 +1239,12 @@ static void device_remove_stored(struct btd_device *device)
 {
 	bdaddr_t src;
 	char addr[18];
+	char hash[9];
 	DBusConnection *conn = get_dbus_connection();
 
 	adapter_get_address(device->adapter, &src);
 	ba2str(&device->bdaddr, addr);
+	sprintf(hash,"%8.8X", device->hash);
 
 	if (device->paired)
 		device_remove_bonding(device);
@@ -1243,6 +1252,7 @@ static void device_remove_stored(struct btd_device *device)
 	delete_entry(&src, "trusts", addr);
 	delete_entry(&src, "types", addr);
 	delete_entry(&src, "primary", addr);
+	delete_entry(&src, "lekeys", hash);
 	delete_all_records(&src, &device->bdaddr);
 	delete_device_service(&src, &device->bdaddr);
 

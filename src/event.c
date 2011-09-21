@@ -692,7 +692,7 @@ int btd_event_link_key_notify(bdaddr_t *local, bdaddr_t *peer,
 {
 	struct btd_adapter *adapter;
 	struct btd_device *device;
-	uint32_t hash = 0;
+	uint32_t hash;
 	int ret;
 
 	DBG("");
@@ -702,9 +702,11 @@ int btd_event_link_key_notify(bdaddr_t *local, bdaddr_t *peer,
 
 	DBG("storing link key of type 0x%02x", key_type);
 
-	if (key_type >= KEY_TYPE_LTK)
+	if (key_type >= KEY_TYPE_LTK) {
+		hash = device_get_hash(device);
 		ret = write_le_key(local, peer, &hash, key, key_type, pin_length, auth, dlen, data);
-	else
+		device_set_hash(device, hash);
+	} else
 		ret = write_link_key(local, peer, key, key_type, pin_length);
 
 	if (ret == 0 && device_is_temporary(device))
