@@ -74,7 +74,6 @@ struct format {
 struct primary {
 	struct gatt_service *gatt;
 	struct att_primary *att;
-	DBusMessage *discovery_reply;
 	DBusMessage *discovery_msg;
 	guint	discovery_timer;
 	char *path;
@@ -348,9 +347,46 @@ static void attrib_destroy(gpointer user_data)
 	gatt->attrib = NULL;
 }
 
+static void stop_discovery(gpointer user_data, gpointer extra_data) {
+
+	struct primary *prim = (struct primary *) user_data;
+	struct gatt_service *gatt = prim->gatt;
+	DBusMessage *reply;
+
+	DBG("");
+
+	prim->discovery_timer = 0;
+
+	if (!prim->discovery_msg)
+		return;
+
+	reply = btd_error_failed(prim->discovery_msg,
+			"Discover characteristic values timed out");
+
+	DBG(" %s", prim->path);
+	g_dbus_send_message(prim->gatt->conn, reply);
+
+	prim->discovery_msg = NULL;
+
+	g_attrib_unref(gatt->attrib);
+}
+
+static gboolean stop_discovery_timeout(gpointer user_data) {
+	stop_discovery(user_data,  NULL);
+	return FALSE;
+}
+
 static void attrib_disconnect(gpointer user_data)
 {
 	struct gatt_service *gatt = user_data;
+	GSList *l;
+
+	DBG("");
+
+	if (!gatt)
+		return;
+
+	g_slist_foreach(gatt->primary, stop_discovery, NULL);
 
 	/* Remote initiated disconnection only */
 	g_attrib_unref(gatt->attrib);
@@ -434,27 +470,27 @@ static int l2cap_connect(struct gatt_service *gatt, GError **gerr,
 	return 0;
 }
 
-static gboolean stop_discovery(gpointer user_data) {
+DBusMessage *create_discovery_reply(struct primary *prim)
+{
+	DBusMessage *reply = dbus_message_new_method_return(prim->discovery_msg);
+	DBusMessageIter iter, array_iter;
+	GSList *l;
 
-	struct primary *prim = (struct primary *) user_data;
-	struct gatt_service *gatt = prim->gatt;
-	DBusMessage *reply;
+	dbus_message_iter_init_append(reply, &iter);
 
-	DBG("");
-	prim->discovery_timer = 0;
+	dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY,
+				DBUS_TYPE_OBJECT_PATH_AS_STRING, &array_iter);
 
-	reply = btd_error_failed(prim->discovery_msg, "Discover characteristic values timed out");
+	for (l = prim->chars; l; l = l->next) {
+		struct characteristic *chr = l->data;
 
-	if (g_dbus_send_message(prim->gatt->conn, reply))
-		DBG("Failed to send error response to Discover Characeristics");
+		dbus_message_iter_append_basic(&array_iter,
+					DBUS_TYPE_OBJECT_PATH, &chr->path);
+	}
 
-	prim->discovery_reply = NULL;
-	prim->discovery_msg = NULL;
+	dbus_message_iter_close_container(&iter, &array_iter);
 
-	g_attrib_unref(gatt->attrib);
-
-	return FALSE;
-
+	return reply;
 }
 
 static void update_char_value(guint8 status, const guint8 *pdu,
@@ -482,19 +518,20 @@ static void update_char_value(guint8 status, const guint8 *pdu,
 		}
 	}
 
-	if (chr->prim->discovery_reply != NULL) {
-
+	if (chr->prim->discovery_msg != NULL) {
 		if (prim->discovery_timer > 0)
 			g_source_remove(prim->discovery_timer);
 		prim->discovery_timer = 0;
 
 		if (current->last) {
-			g_dbus_send_message(gatt->conn, chr->prim->discovery_reply);
-			prim->discovery_reply = NULL;
+			DBusMessage *reply = create_discovery_reply(prim);
+
+			g_dbus_send_message(gatt->conn, reply);
+
 			prim->discovery_msg = NULL;
 		} else {
 			prim->discovery_timer = g_timeout_add_seconds(GATT_TIMEOUT,
-													stop_discovery, prim);
+					stop_discovery_timeout, prim);
 		}
 	}  else if (chr->msg != NULL) {
 
@@ -1194,7 +1231,7 @@ static void update_all_chars(struct primary *prim)
 
 	/* Start timer */
 	prim->discovery_timer = g_timeout_add_seconds(GATT_TIMEOUT,
-						stop_discovery, prim);
+						stop_discovery_timeout, prim);
 
 }
 
@@ -1202,7 +1239,6 @@ static void char_discovered_cb(GSList *characteristics, guint8 status,
 							gpointer user_data)
 {
 	DBusMessage *reply;
-	DBusMessageIter iter, array_iter;
 	struct query_data *current = user_data;
 	struct primary *prim = current->prim;
 	struct att_primary *att = prim->att;
@@ -1214,7 +1250,7 @@ static void char_discovered_cb(GSList *characteristics, guint8 status,
 		const char *str = att_ecode2str(status);
 
 		DBG("Discover all characteristics failed: %s", str);
-		reply = btd_error_failed(current->msg, str);
+		reply = btd_error_failed(prim->discovery_msg, str);
 		goto fail;
 	}
 
@@ -1252,26 +1288,7 @@ static void char_discovered_cb(GSList *characteristics, guint8 status,
 	store_characteristics(gatt, prim);
 	register_characteristics(prim);
 
-	reply = dbus_message_new_method_return(current->msg);
-
-	dbus_message_iter_init_append(reply, &iter);
-
-	dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY,
-				DBUS_TYPE_OBJECT_PATH_AS_STRING, &array_iter);
-
-	for (l = prim->chars; l; l = l->next) {
-		struct characteristic *chr = l->data;
-
-		dbus_message_iter_append_basic(&array_iter,
-					DBUS_TYPE_OBJECT_PATH, &chr->path);
-	}
-
-	dbus_message_iter_close_container(&iter, &array_iter);
-
 	update_all_chars(prim);
-
-	prim->discovery_reply = reply;
-	prim->discovery_msg = current->msg;
 
 	g_free(current);
 
@@ -1292,9 +1309,15 @@ static DBusMessage *discover_char(DBusConnection *conn, DBusMessage *msg,
 	struct query_data *qchr;
 	GError *gerr = NULL;
 
-	DBG("");
+	DBG(" %s", prim->path);
 
-	if (l2cap_connect(prim->gatt, &gerr, FALSE) < 0) {
+	if (prim->discovery_msg) {
+		DBusMessage *reply = btd_error_failed(msg, "Discovery already in progress");
+		g_error_free(gerr);
+		return reply;
+	}
+
+	if (l2cap_connect(prim->gatt, &gerr, TRUE) < 0) {
 		DBusMessage *reply = btd_error_failed(msg, gerr->message);
 		g_error_free(gerr);
 		return reply;
@@ -1302,7 +1325,8 @@ static DBusMessage *discover_char(DBusConnection *conn, DBusMessage *msg,
 
 	qchr = g_new0(struct query_data, 1);
 	qchr->prim = prim;
-	qchr->msg = dbus_message_ref(msg);
+
+	prim->discovery_msg = dbus_message_ref(msg);
 
 	gatt_discover_char(gatt->attrib, att->start, att->end, NULL,
 						char_discovered_cb, qchr);
@@ -1380,10 +1404,10 @@ static GSList *register_primaries(struct gatt_service *gatt, GSList *primaries)
 		g_dbus_register_interface(gatt->conn, prim->path,
 				CHAR_INTERFACE, prim_methods,
 				NULL, NULL, prim, NULL);
-		DBG("Registered: %s", prim->path);
 
 		gatt->primary = g_slist_append(gatt->primary, prim);
 		paths = g_slist_append(paths, g_strdup(prim->path));
+
 		load_characteristics(prim, gatt);
 	}
 
@@ -1448,19 +1472,19 @@ void attrib_client_unregister(struct btd_device *device)
 }
 
 void attrib_client_disconnect(struct btd_device *device) {
-	GSList *l;struct gatt_service *gatt;
-
-	DBG("");
+	GSList *l;
+	struct gatt_service *gatt;
 
 	if (gatt_services == NULL)
 		return;
+
+	DBG("");
 
 	l = g_slist_find_custom(gatt_services, device, gatt_dev_cmp);
 	if (!l)
 		return;
 
 	gatt = l->data;
-
 	attrib_disconnect(gatt);
 
 }
