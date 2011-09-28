@@ -3304,8 +3304,10 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 	if (dev && dev->le) {
 		/* Don't emit if we have found an LE duplicate of a Dual mode device */
 		if (device && (device_get_type(device) == DEVICE_TYPE_BREDR ||
-					device_get_type(device) == DEVICE_TYPE_DUALMODE))
+			device_get_type(device) == DEVICE_TYPE_DUALMODE)) {
+			device_set_type(device, DEVICE_TYPE_DUALMODE);
 			return;
+		}
 		type = DEVICE_TYPE_LE;
 	} else {
 		if (device && (device_get_type(device) == DEVICE_TYPE_LE ||
@@ -3314,6 +3316,9 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 		else
 			type = DEVICE_TYPE_BREDR;
 	}
+
+	if (device)
+		device_set_type(device, type);
 
 	dev_type = device_type2text(type);
 
@@ -3324,6 +3329,10 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 			broadcaster = FALSE;
 		else
 			broadcaster = TRUE;
+
+		/* Don't emit LE result if this is a Dual mode device */
+		if (!(dev->flags & EIR_BREDR_UNSUP))
+			return;
 
 		emit_device_found(adapter->path, paddr,
 				"Address", DBUS_TYPE_STRING, &paddr,
@@ -3453,9 +3462,9 @@ void adapter_update_device_from_info(struct btd_adapter *adapter,
 }
 
 void adapter_update_found_devices(struct btd_adapter *adapter, bdaddr_t *bdaddr,
-				int8_t rssi, uint32_t class, const char *name,
-				const char *alias, gboolean legacy, gboolean le,
-				GSList *services, name_status_t name_status)
+			int8_t rssi, uint32_t class, const char *name,
+			const char *alias, gboolean legacy, gboolean le,
+			int flags, GSList *services, name_status_t name_status)
 {
 	struct remote_dev_info *dev;
 	gboolean new_dev;
@@ -3469,14 +3478,15 @@ void adapter_update_found_devices(struct btd_adapter *adapter, bdaddr_t *bdaddr,
 		if (alias)
 			dev->alias = g_strdup(alias);
 
-		dev->le = le;
-		dev->class = class;
-		dev->legacy = legacy;
 		dev->name_status = name_status;
-	} else if (dev->rssi == rssi)
+	} else if (dev->rssi == rssi && dev->flags == flags && dev->le == le)
 		return;
 
 	dev->rssi = rssi;
+	dev->le = le;
+	dev->class = class;
+	dev->legacy = legacy;
+	dev->flags = flags;
 
 	adapter->found_devices = g_slist_sort(adapter->found_devices,
 						(GCompareFunc) dev_rssi_cmp);

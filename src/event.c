@@ -570,8 +570,8 @@ void btd_event_device_found(bdaddr_t *local, bdaddr_t *peer, uint8_t type,
 	}
 
 	adapter_update_found_devices(adapter, peer, rssi, class, dev_name,
-					alias, legacy, le, eir_data.services,
-					name_status);
+					alias, legacy, le, eir_data.flags,
+					eir_data.services, name_status);
 
 	free_eir_data(&eir_data);
 	free(name);
