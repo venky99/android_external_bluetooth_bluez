@@ -52,6 +52,7 @@
 #include "event.h"
 #include "manager.h"
 #include "oob.h"
+#include "agent.h"
 
 #define DISCOV_HALTED 0
 #define DISCOV_INQ 1
@@ -2389,7 +2390,7 @@ static inline void conn_complete(int index, void *ptr)
 	conn = get_connection(dev, &evt->bdaddr);
 	conn->handle = btohs(evt->handle);
 
-	btd_event_conn_complete(&dev->bdaddr, &evt->bdaddr);
+	btd_event_conn_complete(&dev->bdaddr, &evt->bdaddr, FALSE);
 
 	if (conn->secmode3)
 		bonding_complete(dev, conn, 0);
@@ -2425,7 +2426,7 @@ static inline void le_conn_complete(int index, void *ptr)
 	conn = get_connection(dev, &evt->peer_bdaddr);
 	conn->handle = btohs(evt->handle);
 
-	btd_event_conn_complete(&dev->bdaddr, &evt->peer_bdaddr);
+	btd_event_conn_complete(&dev->bdaddr, &evt->peer_bdaddr, FALSE);
 
 	/* check if the remote version needs be requested */
 	ba2str(&dev->bdaddr, local_addr);

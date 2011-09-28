@@ -20,8 +20,14 @@
  *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
+
+#ifdef ANDROID
 #include <utils/Log.h>
 #define LOG_TAG "Bluez"
+#else
+#define LOGE(...) ((void) 0)
+#endif
+
 void info(const char *format, ...) __attribute__((format(printf, 1, 2)));
 void error(const char *format, ...) __attribute__((format(printf, 1, 2)));
 
@@ -48,7 +54,7 @@ struct btd_debug_desc {
  * name it is called in.
  */
 #define DBG(fmt, arg...) do { \
-        LOGE("%s:%s()" fmt, __FILE__, __func__, ##arg); \
+	LOGE("%s:%s()" fmt, __FILE__, __func__, ##arg); \
 	static struct btd_debug_desc __btd_debug_desc \
 	__attribute__((used, section("__debug"), aligned(8))) = { \
 		.file = __FILE__, .flags = BTD_DEBUG_FLAG_DEFAULT, \
