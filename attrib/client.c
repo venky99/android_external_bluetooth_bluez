@@ -1376,6 +1376,28 @@ static DBusMessage *prim_get_properties(DBusConnection *conn, DBusMessage *msg,
 	return reply;
 }
 
+static DBusMessage *disconnect_service(DBusConnection *conn, DBusMessage *msg,
+								void *data)
+{
+	struct primary *prim = data;
+	GError *gerr = NULL;
+
+	DBG("");
+
+	if(!prim) {
+		DBusMessage *reply = btd_error_failed(msg, gerr->message);
+		g_error_free(gerr);
+		return reply;
+	}
+
+
+	DBG(" %s", prim->path);
+	stop_discovery(prim, NULL);
+	g_attrib_unref(prim->gatt->attrib);
+
+	return dbus_message_new_method_return(msg);
+}
+
 static GDBusMethodTable prim_methods[] = {
 	{ "DiscoverCharacteristics",	"",	"ao",	discover_char,
 					G_DBUS_METHOD_FLAG_ASYNC	},
@@ -1384,6 +1406,7 @@ static GDBusMethodTable prim_methods[] = {
 	{ "UnregisterCharacteristicsWatcher",	"o", "",
 						unregister_watcher	},
 	{ "GetProperties",	"",	"a{sv}",prim_get_properties	},
+	{ "Disconnect",	"",	"", disconnect_service	},
 	{ }
 };
 
