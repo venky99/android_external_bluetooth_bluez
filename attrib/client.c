@@ -785,7 +785,7 @@ static DBusMessage *set_cli_conf(DBusConnection *conn, DBusMessage *msg,
 			DBusMessageIter *iter, struct characteristic *chr)
 {
 	struct gatt_service *gatt = chr->prim->gatt;
-  struct query_data *qvalue;
+	struct query_data *qvalue;
 	DBusMessageIter sub;
 	GError *gerr = NULL;
 	uint8_t *value;
@@ -810,8 +810,6 @@ static DBusMessage *set_cli_conf(DBusConnection *conn, DBusMessage *msg,
 	qvalue->chr = chr;
 
 	chr->msg = dbus_message_ref(msg);
-
-	gatt->attrib = g_attrib_ref(gatt->attrib);
 
 	gatt_write_char(gatt->attrib, chr->desc.cli_conf_hndl, value, len,
 					gatt_write_cli_conf_resp, qvalue);
