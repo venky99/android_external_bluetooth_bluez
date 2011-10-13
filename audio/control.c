@@ -1905,7 +1905,8 @@ static int send_meta_data(struct control *control, uint8_t trans_id,
 		len = AVRCP_MAX_PKT_SIZE + AVCTP_HEADER_LENGTH;
 		memcpy(mdata->remaining_mdata, &buf[len], meta_data_len);
 	} else {
-		params->param_len = htons(meta_data_len);
+		// 1 byte for NumberOfParams, this already part of header_len
+		params->param_len = htons(meta_data_len+1);
 		total_len = meta_data_len + header_len;
 	}
 	return write(sk, buf, total_len);
