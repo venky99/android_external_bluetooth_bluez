@@ -58,6 +58,9 @@
 #include "sink.h"
 #include "source.h"
 
+#include <sys/ioctl.h>
+#include <bluetooth/hci.h>
+
 #define AVDTP_PSM 25
 
 #define MAX_SEID 0x3E
@@ -457,6 +460,51 @@ static void avdtp_sep_set_state(struct avdtp *session,
 				avdtp_state_t state);
 static void auth_cb(DBusError *derr, void *user_data);
 
+void avdtp_reset_link_policy(struct avdtp *session)
+{
+	struct btd_adapter *adapter;
+	int dd=0, dev_id, ret;
+	struct hci_conn_info_req *cr;
+	uint8_t match;
+
+	DBG(" ");
+
+	/*Check whether this is needed for the remote device
+	  by comparing against the known IOP devices
+	*/
+	match = 0;
+	ret = read_special_map_devaddr("force_master", &session->dst, &match);
+	if (ret < 0 || !match)
+		return;
+
+	adapter = manager_find_adapter(&session->server->src);
+	if (!adapter)
+		return;
+
+	dev_id = adapter_get_dev_id(adapter);
+	dd = hci_open_dev(dev_id);
+	if (dd < 0)
+		return;
+
+	cr = g_malloc(sizeof(*cr) + sizeof(struct hci_conn_info));
+	if (!cr) {
+		hci_close_dev(dd);
+		return;
+	}
+
+	bacpy(&cr->bdaddr, &session->dst);
+	cr->type = ACL_LINK;
+
+	if (ioctl(dd, HCIGETCONNINFO, (unsigned long) cr) < 0)
+		goto failed;
+
+	hci_write_link_policy(dd, htobs(cr->conn_info->handle), 0x5, 1000);
+
+failed:
+	hci_close_dev(dd);
+	g_free(cr);
+}
+
 static struct avdtp_server *find_server(GSList *list, const bdaddr_t *src)
 {
 	for (; list; list = list->next) {
@@ -798,6 +846,8 @@ static void stream_free(struct avdtp_stream *stream)
 
 	if (stream->io_id)
 		g_source_remove(stream->io_id);
+
+	avdtp_reset_link_policy(stream->session);
 
 	g_slist_foreach(stream->callbacks, (GFunc) g_free, NULL);
 	g_slist_free(stream->callbacks);
@@ -1783,6 +1833,8 @@ static gboolean avdtp_close_cmd(struct avdtp *session, uint8_t transaction,
 
 	avdtp_sep_set_state(session, sep, AVDTP_STATE_CLOSING);
 
+	avdtp_reset_link_policy(session);
+
 	if (!avdtp_send(session, transaction, AVDTP_MSG_TYPE_ACCEPT,
 						AVDTP_CLOSE, NULL, 0))
 		return FALSE;
@@ -1842,6 +1894,8 @@ static gboolean avdtp_suspend_cmd(struct avdtp *session, uint8_t transaction,
 
 		avdtp_sep_set_state(session, sep, AVDTP_STATE_OPEN);
 	}
+
+	avdtp_reset_link_policy(session);
 
 	return avdtp_send(session, transaction, AVDTP_MSG_TYPE_ACCEPT,
 						AVDTP_SUSPEND, NULL, 0);
@@ -3667,6 +3721,8 @@ int avdtp_close(struct avdtp *session, struct avdtp_stream *stream,
 		return -EINVAL;
 	}
 
+	avdtp_reset_link_policy(session);
+
 	if (immediate && session->req && stream == session->req->stream)
 		return avdtp_abort(session, stream);
 
@@ -3693,6 +3749,7 @@ int avdtp_suspend(struct avdtp *session, struct avdtp_stream *stream)
 
 	memset(&req, 0, sizeof(req));
 	req.acp_seid = stream->rseid;
+	avdtp_reset_link_policy(session);
 
 	return send_request(session, FALSE, stream, AVDTP_SUSPEND,
 							&req, sizeof(req));

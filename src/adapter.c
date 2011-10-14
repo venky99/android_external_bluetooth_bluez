@@ -157,12 +157,89 @@ struct btd_adapter {
 	gboolean name_stored;
 
 	GSList *loaded_drivers;
+	struct btd_device *streaming_device;
 };
 
 static void adapter_set_pairable_timeout(struct btd_adapter *adapter,
 					guint interval);
 static DBusMessage *set_discoverable(DBusConnection *conn, DBusMessage *msg,
 				gboolean discoverable, void *data);
+
+void update_streaming_device(struct btd_device *dev, gboolean streaming)
+{
+	struct btd_adapter *adapter;
+
+	DBG(" %p %d", dev, streaming);
+
+	adapter = device_get_adapter(dev);
+	if (!adapter) {
+		DBG("adapter not avaialble");
+		return;
+	}
+	if (streaming) {
+		adapter->streaming_device = dev;
+	} else {
+		adapter->streaming_device = NULL;
+	}
+}
+
+void force_master_role(struct btd_adapter *adapter)
+{
+	int dd=0, dev_id, ret;
+	struct hci_conn_info_req *cr;
+	struct btd_device *dev;
+	bdaddr_t *remote_bdaddr;
+	uint8_t match;
+
+	DBG("%p", adapter);
+
+	if (!adapter || !adapter->streaming_device)
+		return;
+
+	dev = adapter->streaming_device;
+	remote_bdaddr = get_bdaddr(dev);
+
+	/*Check whether this is needed for the remote device
+	  by comparing against the known IOP devices
+	*/
+	match = 0;
+	ret = read_special_map_devaddr("force_master", remote_bdaddr, &match);
+	if (ret < 0 || !match)
+		return;
+
+	dev_id = adapter_get_dev_id(adapter);
+	dd = hci_open_dev(dev_id);
+	if (dd < 0)
+		return;
+
+	cr = g_malloc(sizeof(*cr) + sizeof(struct hci_conn_info));
+	if (!cr) {
+		hci_close_dev(dd);
+		return;
+	}
+
+	bacpy(&cr->bdaddr, remote_bdaddr);
+	cr->type = ACL_LINK;
+	if (ioctl(dd, HCIGETCONNINFO, (unsigned long) cr) < 0)
+		goto failed;
+
+	if (!(cr->conn_info->link_mode& HCI_LM_MASTER)) {
+		if (hci_switch_role(dd, remote_bdaddr, 0, 5000) < 0)
+			goto failed;
+	}
+
+	/* Certain headsets try to become master and hence resulting
+	audio choppy issues in case of A2DP + scan scenarios.
+	In order to have a better IOP, whenever there is streaming
+	device force the master role and disallow any attemps of remote device
+	attemps for becoming master by updating the link policy.
+	policy will be resetting back on A2DP disconnection */
+	hci_write_link_policy(dd, htobs(cr->conn_info->handle),0, 1000);
+
+failed:
+	hci_close_dev(dd);
+	g_free(cr);
+}
 
 static int found_device_cmp(const struct remote_dev_info *d1,
 			const struct remote_dev_info *d2)
@@ -1328,6 +1405,8 @@ static DBusMessage *adapter_start_discovery(DBusConnection *conn,
 
 	if (!adapter->up)
 		return btd_error_not_ready(msg);
+
+	force_master_role(adapter);
 
 	req = find_session(adapter->disc_sessions, sender);
 	if (req) {
