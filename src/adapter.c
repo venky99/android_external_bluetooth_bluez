@@ -3305,6 +3305,7 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 		/* Don't emit if we have found an LE duplicate of a Dual mode device */
 		if (device && (device_get_type(device) == DEVICE_TYPE_BREDR ||
 			device_get_type(device) == DEVICE_TYPE_DUALMODE)) {
+			dev->le = 0;
 			device_set_type(device, DEVICE_TYPE_DUALMODE);
 			return;
 		}
@@ -3331,8 +3332,12 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 			broadcaster = TRUE;
 
 		/* Don't emit LE result if this is a Dual mode device */
-		if (!(dev->flags & EIR_BREDR_UNSUP))
+		if (!(dev->flags & EIR_BREDR_UNSUP)) {
+			dev->le = 0;
+			if (device)
+				device_set_type(device, DEVICE_TYPE_DUALMODE);
 			return;
+		}
 
 		emit_device_found(adapter->path, paddr,
 				"Address", DBUS_TYPE_STRING, &paddr,
