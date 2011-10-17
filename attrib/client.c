@@ -773,8 +773,6 @@ static DBusMessage *set_value(DBusConnection *conn, DBusMessage *msg,
 
 	chr->msg = dbus_message_ref(msg);
 
-	gatt->attrib = g_attrib_ref(gatt->attrib);
-
 	gatt_write_char(gatt->attrib, chr->handle, value,
 					len, gatt_write_char_resp, qvalue);
 
