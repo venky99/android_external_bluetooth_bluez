@@ -1710,10 +1710,10 @@ static int mgmt_set_dev_class(int index, uint8_t major, uint8_t minor)
 
 static int mgmt_set_limited_discoverable(int index, gboolean limited)
 {
-	uint8_t mode = limited ? 2 : 0;
+	uint8_t mode = limited ? 1 : 0;
 
 	DBG("index %d limited %d", index, limited);
-	return mgmt_set_mode(index, MGMT_OP_SET_DISCOVERABLE, mode);
+	return mgmt_set_mode(index, MGMT_OP_SET_LIMIT_DISCOVERABLE, mode);
 }
 
 static int mgmt_start_discovery(int index)
