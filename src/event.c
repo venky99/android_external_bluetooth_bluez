@@ -686,6 +686,7 @@ proceed:
 }
 
 int btd_event_link_key_notify(bdaddr_t *local, bdaddr_t *peer,
+				uint8_t addr_type,
 				uint8_t *key, uint8_t key_type,
 				uint8_t pin_length, uint8_t auth,
 				uint8_t dlen, uint8_t *data)
@@ -704,7 +705,8 @@ int btd_event_link_key_notify(bdaddr_t *local, bdaddr_t *peer,
 
 	if (key_type >= KEY_TYPE_LTK) {
 		hash = device_get_hash(device);
-		ret = write_le_key(local, peer, &hash, key, key_type, pin_length, auth, dlen, data);
+		ret = write_le_key(local, peer, addr_type, &hash, key, key_type,
+						pin_length, auth, dlen, data);
 		device_set_hash(device, hash);
 	} else
 		ret = write_link_key(local, peer, key, key_type, pin_length);

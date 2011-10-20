@@ -1167,7 +1167,7 @@ struct btd_device *device_create(DBusConnection *conn,
 	if (type == DEVICE_TYPE_LE) {
 		DBG("Device type is LE - checking if the device is paired");
 		if (read_le_key(&src, &device->bdaddr, NULL, NULL, NULL, NULL,
-			NULL, NULL, NULL, NULL) == 0) {
+					NULL, NULL, NULL, NULL, NULL) == 0) {
 			device->paired = TRUE;
 			DBG("%s", "device->paired = TRUE");
 		}

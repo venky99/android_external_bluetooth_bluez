@@ -47,10 +47,13 @@ int write_features_info(bdaddr_t *local, bdaddr_t *peer, unsigned char *page1, u
 int read_remote_features(bdaddr_t *local, bdaddr_t *peer, unsigned char *page1, unsigned char *page2);
 int write_lastseen_info(bdaddr_t *local, bdaddr_t *peer, struct tm *tm);
 int write_lastused_info(bdaddr_t *local, bdaddr_t *peer, struct tm *tm);
-int write_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, unsigned char *key,
-		uint8_t type, uint8_t length, uint8_t auth, uint8_t dlen, uint8_t *data);
-int read_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, uint8_t *length,
-		uint8_t *auth, unsigned char *key, uint8_t type, uint8_t *dlen, uint8_t *data, uint8_t max_dlen);
+int write_le_key(bdaddr_t *local, bdaddr_t *peer, uint8_t addr_type, uint32_t *hash,
+		unsigned char *key, uint8_t type, uint8_t length, uint8_t auth,
+		uint8_t dlen, uint8_t *data);
+int read_le_key(bdaddr_t *local, bdaddr_t *peer, uint8_t *addr_type,
+		uint32_t *hash, uint8_t *length, uint8_t *auth,
+		unsigned char *key, uint8_t type, uint8_t *dlen,
+		uint8_t *data, uint8_t max_dlen);
 uint32_t read_le_hash(bdaddr_t *local, bdaddr_t *peer, uint8_t *mid, uint8_t len);
 int delete_le_keys(bdaddr_t *local, bdaddr_t *peer, uint32_t hash);
 int write_link_key(bdaddr_t *local, bdaddr_t *peer, unsigned char *key, uint8_t type, int length);
@@ -100,13 +103,14 @@ device_type_t read_device_type(const bdaddr_t *sba, const bdaddr_t *dba);
 #define KEY_TYPE_IRK		0x12
 #define KEY_TYPE_CSRK		0x13
 
-#define STORE_LTK	0x01
-#define STORE_IRK	0x02
-#define STORE_CSRK	0x04
+#define LE_STORE_LTK	0x01
+#define LE_STORE_IRK	0x02
+#define LE_STORE_CSRK	0x04
 
-#define KEY_HDR_LEN	27
-#define KEY_LTK_LEN	54
-#define KEY_IRK_LEN	54
-#define KEY_CSRK_LEN	42
+#define LE_KEY_HDR_LEN	30
+#define LE_KEY_LTK_LEN	54
+#define LE_KEY_IRK_LEN	54
+#define LE_KEY_CSRK_LEN	42
 
-#define KEY_LE_LEN	(KEY_HDR_LEN + KEY_LTK_LEN + KEY_IRK_LEN + KEY_CSRK_LEN)
+#define LE_KEY_LEN	(LE_KEY_HDR_LEN + LE_KEY_LTK_LEN + \
+			LE_KEY_IRK_LEN + LE_KEY_CSRK_LEN)

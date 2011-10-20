@@ -65,8 +65,9 @@ struct btd_adapter;
 
 struct link_key_info {
 	bdaddr_t bdaddr;
+	uint8_t addr_type;
+	uint8_t key_type;
 	unsigned char key[16];
-	uint8_t type;
 	uint8_t pin_len;
 	uint8_t auth;
 	uint8_t dlen;

@@ -610,8 +610,9 @@ static void find_hash_by_str(char *key, char *value, void *data)
 		memcpy(io, key, sizeof(uint32_t) * 2 + 1);
 }
 
-int write_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, unsigned char *key,
-		uint8_t type, uint8_t length, uint8_t auth, uint8_t dlen, uint8_t *data)
+int write_le_key(bdaddr_t *local, bdaddr_t *peer, uint8_t addr_type,
+		uint32_t *hash, unsigned char *key, uint8_t key_type,
+		uint8_t length, uint8_t auth, uint8_t dlen, uint8_t *data)
 {
 	char filename[PATH_MAX + 1], hashkey[9];
 	uint32_t this_hash;
@@ -656,39 +657,42 @@ int write_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, unsigned char 
 		sprintf(hashkey, "%8.8X", this_hash);
 	}
 
-	switch (type) {
+	switch (key_type) {
 	case KEY_TYPE_LTK:
-		mask = STORE_LTK;
+		mask = LE_STORE_LTK;
 		break;
 	case KEY_TYPE_IRK:
-		mask = STORE_IRK;
+		mask = LE_STORE_IRK;
 		break;
 	case KEY_TYPE_CSRK:
-		mask = STORE_CSRK;
+		mask = LE_STORE_CSRK;
 		break;
 	default:
 		return 0;
 	}
 
-	newstr = g_malloc0(KEY_LE_LEN);
+	newstr = g_malloc0(LE_KEY_LEN);
 	keystr = textfile_get(filename, hashkey);
 	if (keystr) {
-		old_mask = (uint8_t) strtol(&keystr[18], NULL, 16);
-		length = (uint8_t) strtol(&keystr[18+3], NULL, 16);
-		auth = (uint8_t) strtol(&keystr[18+3+3], NULL, 16);
+		addr_type = (uint8_t) strtol(&keystr[18], NULL, 16);
+		old_mask = (uint8_t) strtol(&keystr[18+3], NULL, 16);
+		length = (uint8_t) strtol(&keystr[18+3+3], NULL, 16);
+		auth = (uint8_t) strtol(&keystr[18+3+3+3], NULL, 16);
 		mask |= old_mask;
 		keystr[17] = '\0';
-		sprintf(newstr, "%s %2.2X %2.2X %2.2X", keystr, mask, length, auth);
+		sprintf(newstr, "%s %2.2X %2.2X %2.2X %2.2X",
+				keystr, addr_type, mask, length, auth);
 	} else {
 		old_mask = 0;
 		ba2str(peer, newstr);
-		sprintf(&newstr[17], " %2.2X %2.2X %2.2X", mask, length, auth);
+		sprintf(&newstr[17], " %2.2X %2.2X %2.2X %2.2X",
+				addr_type, mask, length, auth);
 	}
 
 	old_offset = new_len = strlen(newstr);
 
-	if (mask & STORE_LTK) {
-		if ((type == KEY_TYPE_LTK) && (dlen == 10) && data) {
+	if (mask & LE_STORE_LTK) {
+		if ((key_type == KEY_TYPE_LTK) && (dlen == 10) && data) {
 			newstr[new_len++] = ' ';
 			for (i = 0; i < 16; i++) {
 				sprintf(&newstr[new_len], "%2.2X", key[i]);
@@ -700,16 +704,17 @@ int write_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, unsigned char 
 				new_len += 2;
 			}
 		} else
-			memcpy(&newstr[new_len], &keystr[old_offset], KEY_LTK_LEN-1);
+			memcpy(&newstr[new_len], &keystr[old_offset],
+					LE_KEY_LTK_LEN-1);
 
 		new_len = strlen(newstr);
 
-		if (old_mask & STORE_LTK)
-			old_offset += KEY_LTK_LEN;
+		if (old_mask & LE_STORE_LTK)
+			old_offset += LE_KEY_LTK_LEN;
 	}
 
-	if (mask & STORE_IRK) {
-		if ((type == KEY_TYPE_IRK) && (dlen == 7) && data) {
+	if (mask & LE_STORE_IRK) {
+		if ((key_type == KEY_TYPE_IRK) && (dlen == 7) && data) {
 			newstr[new_len++] = ' ';
 			for (i = 0; i < 16; i++) {
 				sprintf(&newstr[new_len], "%2.2X", key[i]);
@@ -719,16 +724,17 @@ int write_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, unsigned char 
 			new_len += 4;
 			ba2str((bdaddr_t *)&data[1], &newstr[new_len]);
 		} else
-			memcpy(&newstr[new_len], &keystr[old_offset], KEY_IRK_LEN-1);
+			memcpy(&newstr[new_len], &keystr[old_offset],
+					LE_KEY_IRK_LEN-1);
 
 		new_len = strlen(newstr);
 
-		if (old_mask & STORE_IRK)
-			old_offset += KEY_IRK_LEN;
+		if (old_mask & LE_STORE_IRK)
+			old_offset += LE_KEY_IRK_LEN;
 	}
 
-	if (mask & STORE_CSRK) {
-		if ((type == KEY_TYPE_CSRK) && (dlen == 4) && data) {
+	if (mask & LE_STORE_CSRK) {
+		if ((key_type == KEY_TYPE_CSRK) && (dlen == 4) && data) {
 			newstr[new_len++] = ' ';
 			for (i = 0; i < 16; i++) {
 				sprintf(&newstr[new_len], "%2.2X", key[i]);
@@ -740,7 +746,8 @@ int write_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, unsigned char 
 				new_len += 2;
 			}
 		} else
-			memcpy(&newstr[new_len], &keystr[old_offset], KEY_CSRK_LEN-1);
+			memcpy(&newstr[new_len], &keystr[old_offset],
+					LE_KEY_CSRK_LEN-1);
 	}
 
 	err = textfile_put(filename, hashkey, newstr);
@@ -756,12 +763,14 @@ int write_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, unsigned char 
 	return err;
 }
 
-int read_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, uint8_t *length, uint8_t *auth,
-		unsigned char *key, uint8_t type, uint8_t *dlen, uint8_t *data, uint8_t max_dlen)
+int read_le_key(bdaddr_t *local, bdaddr_t *peer, uint8_t *addr_type,
+		uint32_t *hash, uint8_t *length, uint8_t *auth,
+		unsigned char *key, uint8_t key_type, uint8_t *dlen,
+		uint8_t *data, uint8_t max_dlen)
 {
 	char filename[PATH_MAX + 1], hashkey[9], *keystr;
 	uint32_t this_hash;
-	uint8_t this_type, mask;
+	uint8_t this_addr_type, this_type, mask;
 	int i, len;
 	int found = 0;
 
@@ -770,7 +779,7 @@ int read_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, uint8_t *length
 		return -ENOENT;
 	}
 
-	this_type = type;
+	this_type = key_type;
 	this_hash = hash ? *hash : 0;
 
 	create_filename(filename, PATH_MAX, local, "lekeys");
@@ -811,20 +820,22 @@ int read_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, uint8_t *length
 
 	DBG("keystr: %s", keystr);
 
-	mask = (uint8_t) strtol(&keystr[18], NULL, 16);
+	this_addr_type = (uint8_t) strtol(&keystr[18], NULL, 16);
+
+	mask = (uint8_t) strtol(&keystr[18+3], NULL, 16);
 
 	/* Get Length, or if only verifying existance, mark as found */
 	if (length)
-		*length = (uint8_t) strtol(&keystr[18+3], NULL, 16);
+		*length = (uint8_t) strtol(&keystr[18+3+3], NULL, 16);
 	else
 		found = 1;
 
 	if (auth)
-		*auth = (uint8_t) strtol(&keystr[18+3+3], NULL, 16);
+		*auth = (uint8_t) strtol(&keystr[18+3+3+3], NULL, 16);
 
-	len = KEY_HDR_LEN;
+	len = LE_KEY_HDR_LEN;
 
-	if (mask & STORE_LTK) {
+	if (mask & LE_STORE_LTK) {
 		if (this_type == KEY_TYPE_LTK) {
 			if ((max_dlen >= 10) && data && dlen) {
 				char tmp[] = {0, 0, 0};
@@ -847,10 +858,10 @@ int read_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, uint8_t *length
 			}
 			goto done;
 		}
-		len += KEY_LTK_LEN;
+		len += LE_KEY_LTK_LEN;
 	}
 
-	if (mask & STORE_IRK) {
+	if (mask & LE_STORE_IRK) {
 		if (this_type == KEY_TYPE_IRK) {
 			if ((max_dlen >= 7) && data && dlen) {
 				char tmp[] = {0, 0, 0};
@@ -872,10 +883,10 @@ int read_le_key(bdaddr_t *local, bdaddr_t *peer, uint32_t *hash, uint8_t *length
 			}
 			goto done;
 		}
-		len += KEY_IRK_LEN;
+		len += LE_KEY_IRK_LEN;
 	}
 
-	if (mask & STORE_CSRK) {
+	if (mask & LE_STORE_CSRK) {
 		if (this_type == KEY_TYPE_CSRK) {
 			if ((max_dlen >= 10) && data && dlen) {
 				char tmp[] = {0, 0, 0};

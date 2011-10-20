@@ -409,7 +409,7 @@ static void mgmt_new_key(int sk, uint16_t index, void *buf, size_t len)
 	}
 
 	DBG("Controller %u new key of type %u pin_len %u hint: %d", index,
-					ev->key.type, ev->key.pin_len, ev->store_hint);
+			ev->key.key_type, ev->key.pin_len, ev->store_hint);
 
 	if (index > max_index) {
 		error("Unexpected index %u in new_key event", index);
@@ -426,7 +426,8 @@ static void mgmt_new_key(int sk, uint16_t index, void *buf, size_t len)
 
 	if (ev->store_hint)
 		btd_event_link_key_notify(&info->bdaddr, &ev->key.bdaddr,
-						ev->key.val, ev->key.type,
+						ev->key.addr_type,
+						ev->key.val, ev->key.key_type,
 						ev->key.pin_len, ev->key.auth,
 						ev->key.dlen, ev->key.data);
 
@@ -1998,14 +1999,17 @@ static int mgmt_load_keys(int index, GSList *keys, gboolean debug_keys)
 		char addr[18];
 
 		bacpy(&key->bdaddr, &info->bdaddr);
-		key->type = info->type;
+		key->addr_type = info->addr_type;
+		key->key_type = info->key_type;
 		memcpy(key->val, info->key, 16);
 		key->pin_len = info->pin_len;
 		key->auth = info->auth;
 		key->dlen = info->dlen;
 		memcpy(key->data, info->data, info->dlen);
 		ba2str(&key->bdaddr, addr);
-		DBG("Load Key:%s t:%d l:%d a:%d dl:%d", addr, key->type, key->pin_len, key->auth, key->dlen);
+		DBG("Load Key:%s t:%d l:%d a:%d dl:%d",
+				addr, key->key_type, key->pin_len,
+				key->auth, key->dlen);
 	}
 
 	if (write(mgmt_sock, buf, sizeof(*hdr) + cp_size) < 0)

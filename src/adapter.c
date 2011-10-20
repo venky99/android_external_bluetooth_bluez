@@ -2279,7 +2279,7 @@ static void get_le_key_info(void *klist, char *hash, char *value)
 	struct adapter_keys *keys = klist;
 	struct link_key_info *info;
 	bdaddr_t addr;
-	uint8_t mask, bit, pin_len, auth;
+	uint8_t mask, bit, pin_len, auth, addr_type;
 	char tmp[3], addrstr[18];
 	int i, offset, post_offset;
 
@@ -2293,18 +2293,19 @@ static void get_le_key_info(void *klist, char *hash, char *value)
 	memcpy(addrstr, value, 17);
 	addrstr[17] = '\0';
 	str2ba(addrstr, &addr);
-	mask = (uint8_t) strtol(&value[18], NULL, 16);
-	pin_len = (uint8_t) strtol(&value[18+3], NULL, 16);
-	auth = (uint8_t) strtol(&value[18+3+3], NULL, 16);
-	offset = 27;
+	addr_type = (uint8_t) strtol(&value[18], NULL, 16);
+	mask = (uint8_t) strtol(&value[18+3], NULL, 16);
+	pin_len = (uint8_t) strtol(&value[18+3+3], NULL, 16);
+	auth = (uint8_t) strtol(&value[18+3+3+3], NULL, 16);
+	offset = LE_KEY_HDR_LEN;
 
-	for (bit = STORE_LTK; bit <= STORE_CSRK; bit <<= 1) {
+	for (bit = LE_STORE_LTK; bit <= LE_STORE_CSRK; bit <<= 1) {
 		if (bit & mask) {
 			switch (bit) {
-			case STORE_LTK:
+			case LE_STORE_LTK:
 				info = g_malloc0(sizeof(*info) + 10);
-				post_offset = KEY_LTK_LEN;
-				info->type = KEY_TYPE_LTK;
+				post_offset = LE_KEY_LTK_LEN;
+				info->key_type = KEY_TYPE_LTK;
 				info->dlen = 10;
 				for (i = 0; i < 10; i++) {
 					memcpy(tmp, value + offset + 33 + (i * 2), 2);
@@ -2312,10 +2313,10 @@ static void get_le_key_info(void *klist, char *hash, char *value)
 				}
 				break;
 
-			case STORE_IRK:
+			case LE_STORE_IRK:
 				info = g_malloc0(sizeof(*info) + 7);
-				post_offset = KEY_IRK_LEN;
-				info->type = KEY_TYPE_IRK;
+				post_offset = LE_KEY_IRK_LEN;
+				info->key_type = KEY_TYPE_IRK;
 				info->dlen = 7;
 				for (i = 0; i < 7; i++) {
 					memcpy(tmp, value + offset + 33 + (i * 3), 2);
@@ -2323,10 +2324,10 @@ static void get_le_key_info(void *klist, char *hash, char *value)
 				}
 				break;
 
-			case STORE_CSRK:
+			case LE_STORE_CSRK:
 				info = g_malloc0(sizeof(*info) + 4);
-				post_offset = KEY_CSRK_LEN;
-				info->type = KEY_TYPE_CSRK;
+				post_offset = LE_KEY_CSRK_LEN;
+				info->key_type = KEY_TYPE_CSRK;
 				info->dlen = 4;
 				for (i = 0; i < 4; i++) {
 					memcpy(tmp, value + offset + 33 + (i * 2), 2);
@@ -2340,6 +2341,7 @@ static void get_le_key_info(void *klist, char *hash, char *value)
 
 			if (info) {
 				info->bdaddr = addr;
+				info->addr_type = addr_type;
 				info->pin_len = pin_len;
 				info->auth = auth;
 
@@ -2379,7 +2381,7 @@ static struct link_key_info *get_key_info(const char *addr, const char *value)
 	}
 
 	memcpy(tmp, value + 33, 2);
-	info->type = (uint8_t) strtol(tmp, NULL, 10);
+	info->key_type = (uint8_t) strtol(tmp, NULL, 10);
 
 	memcpy(tmp, value + 35, 2);
 	l = strtol(tmp, NULL, 10);
