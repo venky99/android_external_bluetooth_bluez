@@ -189,10 +189,22 @@ Methods		dict GetProperties()
 		void SetProperty(string name, variant value)
 
 			Changes the value of the specified property. Only
-			read-write properties can be changed. On success
-			this will emit a PropertyChanged signal.
+			read-write properties can be changed.
+			This method requires no response from the server.
 
 			Possible Errors: org.bluez.Error.InvalidArguments
+
+		void SetPropertyCmd(string name, variant value)
+
+			Changes the value of the specified property. Only
+			read-write properties can be changed.
+			This method requires no response from the server.
+
+			Possible Errors: org.bluez.Error.InvalidArguments.
+
+		byte array UpdateValue()
+			 Read updated characteristic value from server.
+			 On success, the updated value is saved to Properties.
 
 Properties 	string UUID [readonly]
 
