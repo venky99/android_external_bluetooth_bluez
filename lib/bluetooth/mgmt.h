@@ -220,6 +220,8 @@ struct mgmt_cp_resolve_name {
 	bdaddr_t bdaddr;
 } __packed;
 
+#define MGMT_OP_SET_LIMIT_DISCOVERABLE	0x001F
+
 #define MGMT_EV_CMD_COMPLETE		0x0001
 struct mgmt_ev_cmd_complete {
 	uint16_t opcode;
