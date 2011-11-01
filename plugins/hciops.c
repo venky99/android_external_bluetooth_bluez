@@ -3987,6 +3987,14 @@ static int hciops_remove_remote_oob_data(int index, bdaddr_t *bdaddr)
 	return 0;
 }
 
+static int hciops_set_connection_params(int index, bdaddr_t *bdaddr,
+		uint16_t interval_min, uint16_t interval_max,
+		uint16_t slave_latency, uint16_t timeout_multiplier)
+{
+	DBG("index %d", index);
+	return -ENOSYS;
+}
+
 static struct btd_adapter_ops hci_ops = {
 	.setup = hciops_setup,
 	.cleanup = hciops_cleanup,
@@ -4026,6 +4034,7 @@ static struct btd_adapter_ops hci_ops = {
 	.read_local_oob_data = hciops_read_local_oob_data,
 	.add_remote_oob_data = hciops_add_remote_oob_data,
 	.remove_remote_oob_data = hciops_remove_remote_oob_data,
+	.set_connection_params = hciops_set_connection_params,
 };
 
 static int hciops_init(void)

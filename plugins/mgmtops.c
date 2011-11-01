@@ -21,8 +21,6 @@
  *
  */
 
-#define MGMT_ONLY	1
-#if MGMT_ONLY
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
@@ -50,12 +48,6 @@
 #include "device.h"
 #include "event.h"
 #include "oob.h"
-#else
-
-/* Fall-back to the hciops that work for LE */
-#include "hciops.c"
-#include <bluetooth/mgmt.h>
-#endif
 
 #include "storage.h"
 
@@ -1622,12 +1614,6 @@ static int mgmt_setup(void)
 	GIOCondition condition;
 	int dd, err;
 
-#if !MGMT_ONLY
-	err = hciops_setup();
-	if (err < 0)
-		return err;
-#endif
-
 	dd = socket(AF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI);
 	if (dd < 0)
 		return -errno;
@@ -1681,10 +1667,6 @@ static void mgmt_cleanup(void)
 		g_source_remove(mgmt_watch);
 		mgmt_watch = 0;
 	}
-
-#if !MGMT_ONLY
-	hciops_cleanup();
-#endif
 }
 
 static int mgmt_set_dev_class(int index, uint8_t major, uint8_t minor)
@@ -2156,6 +2138,36 @@ static int mgmt_remove_remote_oob_data(int index, bdaddr_t *bdaddr)
 	return 0;
 }
 
+static int mgmt_set_connection_params(int index, bdaddr_t *bdaddr,
+		uint16_t interval_min, uint16_t interval_max,
+		uint16_t slave_latency, uint16_t timeout_multiplier)
+{
+	char buf[MGMT_HDR_SIZE + sizeof(struct mgmt_cp_set_connection_params)];
+	struct mgmt_hdr *hdr = (void *) buf;
+	struct mgmt_cp_set_connection_params *cp = (void *) &buf[sizeof(*hdr)];
+	char addr[18];
+
+	ba2str(bdaddr, addr);
+	DBG("hci%d bdaddr %s", index, addr);
+
+	memset(buf, 0, sizeof(buf));
+
+	hdr->opcode = htobs(MGMT_OP_SET_CONNECTION_PARAMS);
+	hdr->index = htobs(index);
+	hdr->len = htobs(sizeof(*cp));
+
+	bacpy(&cp->bdaddr, bdaddr);
+	cp->interval_min = interval_min;
+	cp->interval_max = interval_max;
+	cp->slave_latency = slave_latency;
+	cp->timeout_multiplier = timeout_multiplier;
+
+	if (write(mgmt_sock, &buf, sizeof(buf)) < 0)
+		return -errno;
+
+	return 0;
+}
+
 static struct btd_adapter_ops mgmt_ops = {
 	.setup = mgmt_setup,
 	.cleanup = mgmt_cleanup,
@@ -2167,7 +2179,6 @@ static struct btd_adapter_ops mgmt_ops = {
 	.set_limited_discoverable = mgmt_set_limited_discoverable,
 	.start_discovery = mgmt_start_discovery,
 	.stop_discovery = mgmt_stop_discovery,
-#if MGMT_ONLY
 	.resolve_name = mgmt_resolve_name,
 	.cancel_resolve_name = mgmt_cancel_resolve_name,
 	.set_name = mgmt_set_name,
@@ -2180,27 +2191,10 @@ static struct btd_adapter_ops mgmt_ops = {
 	.get_conn_list = mgmt_get_conn_list,
 	.read_local_features = mgmt_read_local_features,
 	.disconnect = mgmt_disconnect,
-#else
-	.resolve_name = hciops_resolve_name,
-	.cancel_resolve_name = hciops_cancel_resolve_name,
-	.set_name = hciops_set_name,
-	.set_dev_class = hciops_set_dev_class,
-	.set_fast_connectable = hciops_fast_connectable,
-	.read_clock = hciops_read_clock,
-	.read_bdaddr = hciops_read_bdaddr,
-	.block_device = hciops_block_device,
-	.unblock_device = hciops_unblock_device,
-	.get_conn_list = hciops_get_conn_list,
-	.read_local_features = hciops_read_local_features,
-	.disconnect = hciops_disconnect,
-#endif
-
 	.remove_bonding = mgmt_remove_bonding,
 	.pincode_reply = mgmt_pincode_reply,
 	.confirm_reply = mgmt_confirm_reply,
 	.passkey_reply = mgmt_passkey_reply,
-
-#if MGMT_ONLY
 	.enable_le = mgmt_enable_le,
 	.encrypt_link = mgmt_encrypt_link,
 	.set_did = mgmt_set_did,
@@ -2208,16 +2202,6 @@ static struct btd_adapter_ops mgmt_ops = {
 	.remove_uuid = mgmt_remove_uuid,
 	.disable_cod_cache = mgmt_disable_cod_cache,
 	.restore_powered = mgmt_restore_powered,
-#else
-	.enable_le = hciops_enable_le,
-	.encrypt_link = hciops_encrypt_link,
-	.set_did = hciops_set_did,
-	.add_uuid = hciops_add_uuid,
-	.remove_uuid = hciops_remove_uuid,
-	.disable_cod_cache = hciops_disable_cod_cache,
-	.restore_powered = hciops_restore_powered,
-#endif
-
 	.load_keys = mgmt_load_keys,
 	.set_io_capability = mgmt_set_io_capability,
 	.create_bonding = mgmt_create_bonding,
@@ -2225,6 +2209,7 @@ static struct btd_adapter_ops mgmt_ops = {
 	.read_local_oob_data = mgmt_read_local_oob_data,
 	.add_remote_oob_data = mgmt_add_remote_oob_data,
 	.remove_remote_oob_data = mgmt_remove_remote_oob_data,
+	.set_connection_params = mgmt_set_connection_params,
 };
 
 static int mgmt_init(void)

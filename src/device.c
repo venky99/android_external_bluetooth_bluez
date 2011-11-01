@@ -901,6 +901,35 @@ static DBusMessage *get_service_attribute_value_reply(DBusMessage *msg, DBusConn
 	return reply;
 }
 
+static DBusMessage *set_connection_params(DBusConnection *conn,
+						DBusMessage *msg,
+						void *user_data)
+{
+	struct btd_device *device = user_data;
+	uint16_t interval_min, interval_max, slave_latency, timeout_multiplier;
+	int ret;
+
+	if (dbus_message_get_args(msg, NULL, DBUS_TYPE_UINT16, &interval_min,
+					DBUS_TYPE_UINT16, &interval_max,
+					DBUS_TYPE_UINT16, &slave_latency,
+					DBUS_TYPE_UINT16, &timeout_multiplier,
+					DBUS_TYPE_INVALID) == FALSE)
+		goto fail;
+
+	ret = btd_adapter_set_connection_params(device->adapter,
+					&device->bdaddr,
+					interval_min, interval_max,
+					slave_latency, timeout_multiplier);
+
+	if (ret)
+		goto fail;
+
+	return dbus_message_new_method_return(msg);
+fail:
+	return g_dbus_create_error(msg, ERROR_INTERFACE ".Failed",
+					"SetConnectionParams Failed");
+}
+
 static DBusMessage *get_service_attribute_value(DBusConnection *conn,
 						DBusMessage *msg,
 						void *user_data)
@@ -962,6 +991,7 @@ static GDBusMethodTable device_methods[] = {
 	{ "Disconnect",		"",	"",		disconnect,
 						G_DBUS_METHOD_FLAG_ASYNC},
 	{ "GetServiceAttributeValue",  "sq", "i",       get_service_attribute_value},
+	{ "SetConnectionParams",	"qqqq",	"",	set_connection_params	},
 	{ }
 };
 
