@@ -2878,10 +2878,12 @@ void device_set_authorizing(struct btd_device *device, gboolean auth)
 void device_register_services(DBusConnection *conn, struct btd_device *device,
 						GSList *prim_list, int psm)
 {
-	device->services = attrib_client_register(conn, device, psm, NULL,
+	if (!device->services) {
+		device->services = attrib_client_register(conn, device, psm, NULL,
 								prim_list);
-	device->primaries = g_slist_concat(device->primaries, prim_list);
-	gatt_services_changed(device);
+		device->primaries = g_slist_concat(device->primaries, prim_list);
+		gatt_services_changed(device);
+	}
 }
 
 GSList *btd_device_get_primaries(struct btd_device *device)
