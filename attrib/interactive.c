@@ -55,6 +55,13 @@ struct characteristic_data {
 	bt_uuid_t uuid;
 };
 
+struct query_data {
+	uint16_t handle;
+	uint16_t offset;
+	uint16_t len;
+	uint8_t value[0];
+};
+
 static void cmd_help(int argcp, char **argvp);
 
 enum state {
@@ -266,14 +273,26 @@ done:
 static void char_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
 							gpointer user_data)
 {
+	struct query_data *query = user_data;
 	uint8_t value[ATT_MAX_MTU];
 	int i, vlen;
 
 	if (status != 0) {
 		printf("Characteristic value/descriptor read failed: %s\n",
-							att_ecode2str(status));
+				att_ecode2str(status));
+
+		if (status == ATT_ECODE_INSUFF_ENC ||
+				status == ATT_ECODE_AUTHENTICATION) {
+			if (bt_io_set(iochannel, BT_IO_L2CAP, NULL,
+					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_HIGH,
+					BT_IO_OPT_INVALID))
+				gatt_read_char(attrib, query->handle,
+					query->offset, char_read_cb, query);
+		}
 		goto done;
 	}
+
+	g_free(query);
 
 	if (!dec_read_resp(pdu, plen, value, &vlen)) {
 		printf("Protocol error\n");
@@ -506,6 +525,7 @@ static void cmd_read_hnd(int argcp, char **argvp)
 {
 	int handle;
 	int offset = 0;
+	struct query_data *query;
 
 	if (conn_state != STATE_CONNECTED) {
 		printf("Command failed: disconnected\n");
@@ -534,7 +554,10 @@ static void cmd_read_hnd(int argcp, char **argvp)
 		}
 	}
 
-	gatt_read_char(attrib, handle, offset, char_read_cb, attrib);
+	query = g_malloc0(sizeof(struct query_data));
+	query->handle = handle;
+	query->offset = offset;
+	gatt_read_char(attrib, handle, offset, char_read_cb, query);
 	return;
 
 done:
