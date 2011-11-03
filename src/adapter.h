@@ -227,6 +227,9 @@ struct btd_adapter_ops {
 	int (*add_remote_oob_data) (int index, bdaddr_t *bdaddr, uint8_t *hash,
 							uint8_t *randomizer);
 	int (*remove_remote_oob_data) (int index, bdaddr_t *bdaddr);
+	int (*set_connection_params) (int index, bdaddr_t *bdaddr,
+			uint16_t interval_min, uint16_t interval_max,
+			uint16_t slave_latency, uint16_t timeout_multiplier);
 };
 
 int btd_register_adapter_ops(struct btd_adapter_ops *ops, gboolean priority);
@@ -283,3 +286,7 @@ int btd_adapter_add_remote_oob_data(struct btd_adapter *adapter,
 
 int btd_adapter_remove_remote_oob_data(struct btd_adapter *adapter,
 							bdaddr_t *bdaddr);
+
+int btd_adapter_set_connection_params(struct btd_adapter *adapter,
+		bdaddr_t *bdaddr, uint16_t interval_min, uint16_t interval_max,
+		uint16_t slave_latency, uint16_t timeout_multiplier);

@@ -4060,3 +4060,12 @@ int btd_adapter_remove_remote_oob_data(struct btd_adapter *adapter,
 {
 	return adapter_ops->remove_remote_oob_data(adapter->dev_id, bdaddr);
 }
+
+int btd_adapter_set_connection_params(struct btd_adapter *adapter,
+		bdaddr_t *bdaddr, uint16_t interval_min, uint16_t interval_max,
+		uint16_t slave_latency, uint16_t timeout_multiplier)
+{
+	return adapter_ops->set_connection_params(adapter->dev_id, bdaddr,
+			interval_min, interval_max, slave_latency,
+			timeout_multiplier);
+}
