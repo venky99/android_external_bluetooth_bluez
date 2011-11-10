@@ -108,8 +108,6 @@ struct query_data {
 	DBusMessage *msg;
 	uint16_t handle;
 	gboolean last;
-	uint16_t len;
-	uint8_t value[0];
 };
 
 struct watcher {
@@ -506,20 +504,8 @@ static void update_char_value(guint8 status, const guint8 *pdu,
 
 	DBG("");
 
-	if (status == 0) {
+	if (status == 0)
 		characteristic_set_value(chr, pdu + 1, len - 1);
-	} else if (status == ATT_ECODE_INSUFF_ENC ||
-			status == ATT_ECODE_AUTHENTICATION) {
-		GIOChannel *io = g_attrib_get_channel(gatt->attrib);
-
-		if (bt_io_set(io, BT_IO_L2CAP, NULL,
-				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_HIGH,
-				BT_IO_OPT_INVALID)) {
-			gatt_read_char(gatt->attrib, chr->handle, 0,
-					update_char_value, current);
-			return;
-		}
-	}
 
 	if (chr->prim->discovery_msg != NULL) {
 		if (prim->discovery_timer > 0)
@@ -662,19 +648,6 @@ static void gatt_write_char_resp(guint8 status, const guint8 *pdu,
 		g_dbus_send_message(gatt->conn, reply);
 
 		chr->msg = NULL;
-
-	} else if (status == ATT_ECODE_INSUFF_ENC ||
-			status == ATT_ECODE_AUTHENTICATION) {
-		GIOChannel *io = g_attrib_get_channel(gatt->attrib);
-
-		if (bt_io_set(io, BT_IO_L2CAP, NULL,
-				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_HIGH,
-				BT_IO_OPT_INVALID)) {
-			gatt_write_char(gatt->attrib, chr->handle,
-					current->value, current->len,
-					gatt_write_char_resp, current);
-			return;
-		}
 	} else {
 		reply = btd_error_invalid_args(chr->msg);
 		if (!reply) {
@@ -724,19 +697,6 @@ static void gatt_write_cli_conf_resp(guint8 status, const guint8 *pdu,
 
 		g_dbus_send_message(gatt->conn, reply);
 		chr->msg = NULL;
-
-	} else if (status == ATT_ECODE_INSUFF_ENC ||
-			status == ATT_ECODE_AUTHENTICATION) {
-		GIOChannel *io = g_attrib_get_channel(gatt->attrib);
-
-		if (bt_io_set(io, BT_IO_L2CAP, NULL,
-				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_HIGH,
-				BT_IO_OPT_INVALID)) {
-			gatt_write_char(gatt->attrib, chr->handle,
-					current->value, current->len,
-					gatt_write_cli_conf_resp, current);
-			return;
-		}
 	} else {
 		reply = btd_error_invalid_args(chr->msg);
 		if (!reply) {
@@ -774,11 +734,9 @@ static DBusMessage *set_value(DBusConnection *conn, DBusMessage *msg,
 		return reply;
 	}
 
-	qvalue = g_malloc0(sizeof(struct query_data) + len);
+	qvalue = g_new0(struct query_data, 1);
 	qvalue->prim = chr->prim;
 	qvalue->chr = chr;
-	qvalue->len = len;
-	memcpy(qvalue->value, value, len);
 
 	chr->msg = dbus_message_ref(msg);
 
@@ -812,11 +770,9 @@ static DBusMessage *set_cli_conf(DBusConnection *conn, DBusMessage *msg,
 		return reply;
 	}
 
-	qvalue = g_malloc0(sizeof(struct query_data) + len);
+	qvalue = g_new0(struct query_data, 1);
 	qvalue->prim = chr->prim;
 	qvalue->chr = chr;
-	qvalue->len = len;
-	memcpy(qvalue->value, value, len);
 
 	chr->msg = dbus_message_ref(msg);
 
@@ -1094,17 +1050,6 @@ static void update_char_desc(guint8 status, const guint8 *pdu, guint16 len,
 		store_attribute(gatt, current->handle,
 				GATT_CHARAC_USER_DESC_UUID,
 				(void *) chr->desc.desc, len);
-	} else if (status == ATT_ECODE_INSUFF_ENC ||
-			status == ATT_ECODE_AUTHENTICATION) {
-		GIOChannel *io = g_attrib_get_channel(gatt->attrib);
-
-		if (bt_io_set(io, BT_IO_L2CAP, NULL,
-				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_HIGH,
-				BT_IO_OPT_INVALID)) {
-			gatt_read_char(gatt->attrib, current->handle, 0,
-					update_char_desc, current);
-			return;
-		}
 	}
 
 	g_attrib_unref(gatt->attrib);

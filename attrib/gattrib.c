@@ -380,6 +380,31 @@ static gboolean received_data(GIOChannel *io, GIOCondition cond, gpointer data)
 	if (is_response(buf[0]) == FALSE)
 		return TRUE;
 
+	/* Auto-elevate security if remote device complains */
+	if (buf[0] == ATT_OP_ERROR && (buf[4] == ATT_ECODE_INSUFF_ENC ||
+					buf[4] == ATT_ECODE_AUTHENTICATION)) {
+		BtIOSecLevel sec_level = BT_IO_SEC_LOW;
+
+		bt_io_get(io, BT_IO_L2CAP, NULL,
+			BT_IO_OPT_SEC_LEVEL, &sec_level,
+			BT_IO_OPT_INVALID);
+
+		/* If already at high, give up and process as normal */
+		if (sec_level == BT_IO_SEC_HIGH)
+			goto process_response;
+		else if (sec_level < BT_IO_SEC_MEDIUM)
+			sec_level = BT_IO_SEC_MEDIUM;
+		else
+			sec_level = BT_IO_SEC_HIGH;
+
+		if (bt_io_set(io, BT_IO_L2CAP, NULL,
+				BT_IO_OPT_SEC_LEVEL, sec_level,
+				BT_IO_OPT_INVALID)) {
+			goto done;
+		}
+	}
+
+process_response:
 	cmd = g_queue_pop_head(attrib->queue);
 	if (cmd == NULL) {
 		/* Keep the watch if we have events to report */
