@@ -4,7 +4,8 @@
  *
  *  Copyright (C) 2002-2003  Maxim Krasnyansky <maxk@qualcomm.com>
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
- *  Copyright (C) 2000-2001, 2010, 2011 Code Aurora Forum. All rights reserved.
+ *  Copyright (c) 2000-2001, 2010, Code Aurora Forum. All rights reserved.
+ *
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -1052,18 +1053,18 @@ static int qcom_uart_init(int fd, struct uart_t *u, struct termios *ti)
 
 static int qcom_uart_post(int fd, struct uart_t *u, struct termios *ti)
 {
-	int flags = 0;
+        int flags = 0;
 
-	if (ioctl(fd, TIOCMGET, &flags) < 0){
-		perror("TIOCMGET failed in post \n");
-		return -1;
-	}
-	flags &= ~TIOCM_RTS;
-	if (ioctl(fd, TIOCMSET, &flags) < 0){
-		perror("TIOCMSET failed in post: HW Flow-on error \n");
-		return -1;
-	}
-	return 0;
+        if (ioctl(fd, TIOCMGET, &flags) < 0){
+                perror("TIOCMGET failed in post \n");
+                return -1;
+        }
+        flags &= ~TIOCM_RTS;
+        if (ioctl(fd, TIOCMSET, &flags) < 0){
+                perror("TIOCMSET failed in post: HW Flow-on error \n");
+                return -1;
+        }
+        return 0;
 }
 
 struct uart_t uart[] = {
@@ -1167,10 +1168,9 @@ struct uart_t uart[] = {
 
 	/* QUALCOMM BTS */
 	{ "qualcomm",   0x0000, 0x0000, HCI_UART_H4,   115200, 115200,
-			FLOW_CTL, DISABLE_PM, NULL, qualcomm, NULL },
-
+			FLOW_CTL, DISABLE_PM, NULL, NULL, NULL     },
 	{ "qualcomm-ibs", 0x0000, 0x0000, HCI_UART_IBS,  115200, 115200,
-		FLOW_CTL, DISABLE_PM, NULL, qcom_uart_init, qcom_uart_post },
+			FLOW_CTL, DISABLE_PM, NULL, qcom_uart_init, qcom_uart_post     },
 
 	{ NULL, 0 }
 };
