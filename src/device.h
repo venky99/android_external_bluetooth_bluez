@@ -32,6 +32,7 @@ typedef enum {
 	AUTH_TYPE_CONFIRM,
 	AUTH_TYPE_NOTIFY,
 	AUTH_TYPE_AUTO,
+	AUTH_TYPE_OOB,
 	AUTH_TYPE_PAIRING_CONSENT,
 } auth_type_t;
 
@@ -48,13 +49,18 @@ struct btd_device *device_create(DBusConnection *conn,
 void device_set_name(struct btd_device *device, const char *name);
 void device_get_name(struct btd_device *device, char *name, size_t len);
 device_type_t device_get_type(struct btd_device *device);
+uint32_t device_get_hash(struct btd_device *device);
+void device_set_hash(struct btd_device *device, uint32_t hash);
 void device_remove(struct btd_device *device, gboolean remove_stored);
 gint device_address_cmp(struct btd_device *device, const gchar *address);
+gint device_hash_cmp(struct btd_device *device, const gchar *hash);
 int device_browse_primary(struct btd_device *device, DBusConnection *conn,
 				DBusMessage *msg, gboolean secure);
 int device_browse_sdp(struct btd_device *device, DBusConnection *conn,
 			DBusMessage *msg, uuid_t *search, gboolean reverse);
 void device_probe_drivers(struct btd_device *device, GSList *profiles);
+int conn_get_pending_sec_level(struct btd_device *device, uint8_t *pending_sec_level);
+
 const sdp_record_t *btd_device_get_record(struct btd_device *device,
 						const char *uuid);
 GSList *btd_device_get_primaries(struct btd_device *device);
@@ -78,7 +84,9 @@ void device_set_bonded(struct btd_device *device, gboolean bonded);
 gboolean device_is_connected(struct btd_device *device);
 DBusMessage *device_create_bonding(struct btd_device *device,
 				DBusConnection *conn, DBusMessage *msg,
-				const char *agent_path, uint8_t capability);
+				const char *agent_path, uint8_t capability,
+				gboolean oob);
+char *device_type2text(device_type_t type);
 void device_remove_bonding(struct btd_device *device);
 void device_bonding_complete(struct btd_device *device, uint8_t status);
 void device_simple_pairing_complete(struct btd_device *device, uint8_t status);
@@ -91,8 +99,10 @@ void device_cancel_authentication(struct btd_device *device, gboolean aborted);
 gboolean device_is_authenticating(struct btd_device *device);
 gboolean device_is_authorizing(struct btd_device *device);
 void device_set_authorizing(struct btd_device *device, gboolean auth);
-void device_add_connection(struct btd_device *device, DBusConnection *conn);
+void device_add_connection(struct btd_device *device, DBusConnection *conn,
+								uint8_t le);
 void device_remove_connection(struct btd_device *device, DBusConnection *conn);
+int device_get_handle(struct btd_device *device, int dd, uint16_t *handle);
 void device_request_disconnect(struct btd_device *device, DBusMessage *msg);
 
 typedef void (*disconnect_watch) (struct btd_device *device, gboolean removal,

@@ -605,7 +605,7 @@ static gboolean parse_proto_params(sdp_list_t *proto_list, uint16_t *psm,
 		*psm = sdp_get_proto_port(proto_list, L2CAP_UUID);
 
 	/* Getting start and end handle */
-	seq1 = proto_seq_find(proto_list);
+	seq1 = sdp_get_proto_desc(proto_list, ATT_UUID);
 	if (!seq1 || seq1->dtd != SDP_UINT16)
 		return FALSE;
 

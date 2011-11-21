@@ -49,6 +49,7 @@
 #include "device.h"
 #include "glib-helper.h"
 #include "storage.h"
+#include "log.h"
 
 struct match {
 	GSList *keys;
@@ -567,6 +568,7 @@ int read_link_key(bdaddr_t *local, bdaddr_t *peer, unsigned char *key, uint8_t *
 	int i;
 
 	create_filename(filename, PATH_MAX, local, "linkkeys");
+	DBG("%s", filename);
 
 	ba2str(peer, addr);
 	str = textfile_get(filename, addr);
@@ -575,6 +577,7 @@ int read_link_key(bdaddr_t *local, bdaddr_t *peer, unsigned char *key, uint8_t *
 
 	if (!key) {
 		free(str);
+		DBG("no key");
 		return 0;
 	}
 
@@ -590,8 +593,417 @@ int read_link_key(bdaddr_t *local, bdaddr_t *peer, unsigned char *key, uint8_t *
 	}
 
 	free(str);
+	DBG("key found");
 
 	return 0;
+}
+
+static void find_hash_by_str(char *key, char *value, void *data)
+{
+	char *io = data;
+
+	/* See if we already found Addr in lekeys */
+	if (io[sizeof(uint32_t) * 2] == '\0')
+		return;
+
+	if (strstr(value, io))
+		memcpy(io, key, sizeof(uint32_t) * 2 + 1);
+}
+
+int write_le_key(bdaddr_t *local, bdaddr_t *peer, uint8_t addr_type,
+		uint32_t *hash, unsigned char *key, uint8_t key_type,
+		uint8_t length, uint8_t auth, uint8_t dlen, uint8_t *data)
+{
+	char filename[PATH_MAX + 1], hashkey[9];
+	uint32_t this_hash;
+	uint8_t mask, old_mask, old_offset;
+	char *keystr, *newstr;
+	int i, new_len, err = 0;
+
+	if (!local || !peer || !hash || !key)
+		return 0;
+
+	this_hash = *hash;
+
+	create_filename(filename, PATH_MAX, local, "lekeys");
+
+	create_file(filename, S_IRUSR | S_IWUSR);
+
+	/* Find hash by BDADDR */
+	if (!this_hash) {
+		char tmp[18];
+
+		ba2str(peer, tmp);
+		textfile_foreach(filename, find_hash_by_str, tmp);
+
+		if (tmp[sizeof(uint32_t) * 2] == '\0') {
+			this_hash = (uint32_t) strtol(tmp, NULL, 16);
+		}
+	}
+
+	/* Generate new hash */
+	if (!this_hash) {
+		char *tmp = textfile_get(filename, "lasthash");
+		if (tmp) {
+			this_hash = (uint32_t) strtol(tmp, NULL, 16);
+			free(tmp);
+		}
+		this_hash++;
+		sprintf(hashkey, "%8.8X", this_hash);
+		err = textfile_put(filename, "lasthash", hashkey);
+		if (err)
+			return err;
+	} else {
+		sprintf(hashkey, "%8.8X", this_hash);
+	}
+
+	switch (key_type) {
+	case KEY_TYPE_LTK:
+		mask = LE_STORE_LTK;
+		break;
+	case KEY_TYPE_IRK:
+		mask = LE_STORE_IRK;
+		break;
+	case KEY_TYPE_CSRK:
+		mask = LE_STORE_CSRK;
+		break;
+	default:
+		return 0;
+	}
+
+	newstr = g_malloc0(LE_KEY_LEN);
+	keystr = textfile_get(filename, hashkey);
+	if (keystr) {
+		addr_type = (uint8_t) strtol(&keystr[18], NULL, 16);
+		old_mask = (uint8_t) strtol(&keystr[18+3], NULL, 16);
+		length = (uint8_t) strtol(&keystr[18+3+3], NULL, 16);
+		auth = (uint8_t) strtol(&keystr[18+3+3+3], NULL, 16);
+		mask |= old_mask;
+		keystr[17] = '\0';
+		sprintf(newstr, "%s %2.2X %2.2X %2.2X %2.2X",
+				keystr, addr_type, mask, length, auth);
+	} else {
+		old_mask = 0;
+		ba2str(peer, newstr);
+		sprintf(&newstr[17], " %2.2X %2.2X %2.2X %2.2X",
+				addr_type, mask, length, auth);
+	}
+
+	old_offset = new_len = strlen(newstr);
+
+	if (mask & LE_STORE_LTK) {
+		if ((key_type == KEY_TYPE_LTK) && (dlen == 10) && data) {
+			newstr[new_len++] = ' ';
+			for (i = 0; i < 16; i++) {
+				sprintf(&newstr[new_len], "%2.2X", key[i]);
+				new_len += 2;
+			}
+			newstr[new_len++] = ' ';
+			for (i = 0; i < 10; i++) {
+				sprintf(&newstr[new_len], "%2.2X", data[i]);
+				new_len += 2;
+			}
+		} else
+			memcpy(&newstr[new_len], &keystr[old_offset],
+					LE_KEY_LTK_LEN-1);
+
+		new_len = strlen(newstr);
+
+		if (old_mask & LE_STORE_LTK)
+			old_offset += LE_KEY_LTK_LEN;
+	}
+
+	if (mask & LE_STORE_IRK) {
+		if ((key_type == KEY_TYPE_IRK) && (dlen == 7) && data) {
+			newstr[new_len++] = ' ';
+			for (i = 0; i < 16; i++) {
+				sprintf(&newstr[new_len], "%2.2X", key[i]);
+				new_len += 2;
+			}
+			sprintf(&newstr[new_len], " %2.2X ", data[0]);
+			new_len += 4;
+			ba2str((bdaddr_t *)&data[1], &newstr[new_len]);
+		} else
+			memcpy(&newstr[new_len], &keystr[old_offset],
+					LE_KEY_IRK_LEN-1);
+
+		new_len = strlen(newstr);
+
+		if (old_mask & LE_STORE_IRK)
+			old_offset += LE_KEY_IRK_LEN;
+	}
+
+	if (mask & LE_STORE_CSRK) {
+		if ((key_type == KEY_TYPE_CSRK) && (dlen == 4) && data) {
+			newstr[new_len++] = ' ';
+			for (i = 0; i < 16; i++) {
+				sprintf(&newstr[new_len], "%2.2X", key[i]);
+				new_len += 2;
+			}
+			newstr[new_len++] = ' ';
+			for (i = 0; i < 4; i++) {
+				sprintf(&newstr[new_len], "%2.2X", data[i]);
+				new_len += 2;
+			}
+		} else
+			memcpy(&newstr[new_len], &keystr[old_offset],
+					LE_KEY_CSRK_LEN-1);
+	}
+
+	err = textfile_put(filename, hashkey, newstr);
+
+	if (keystr)
+		free(keystr);
+
+	free(newstr);
+
+	if (!err)
+		*hash = this_hash;
+
+	return err;
+}
+
+int read_le_key(bdaddr_t *local, bdaddr_t *peer, uint8_t *addr_type,
+		uint32_t *hash, uint8_t *length, uint8_t *auth,
+		unsigned char *key, uint8_t key_type, uint8_t *dlen,
+		uint8_t *data, uint8_t max_dlen)
+{
+	char filename[PATH_MAX + 1], hashkey[9], *keystr;
+	uint32_t this_hash;
+	uint8_t this_addr_type, this_type, mask;
+	int i, len;
+	int found = 0;
+
+	if (!local || !peer) {
+		DBG("%p %p", local, peer);
+		return -ENOENT;
+	}
+
+	this_type = key_type;
+	this_hash = hash ? *hash : 0;
+
+	create_filename(filename, PATH_MAX, local, "lekeys");
+
+	/* default to LTK if unrecognized */
+	switch (this_type) {
+	case KEY_TYPE_IRK:
+	case KEY_TYPE_CSRK:
+		break;
+	default:
+		this_type = KEY_TYPE_LTK;
+	}
+
+	/* Find hash by BDADDR */
+	if (!this_hash) {
+		char tmp[18];
+
+		ba2str(peer, tmp);
+		textfile_foreach(filename, find_hash_by_str, tmp);
+
+		if (tmp[sizeof(uint32_t) * 2] == '\0') {
+			this_hash = (uint32_t) strtol(tmp, NULL, 16);
+		}
+	}
+
+	if (!this_hash) {
+		DBG("!this_hash");
+		return -ENOENT;
+	}
+
+	sprintf(hashkey, "%8.8X", this_hash);
+	keystr = textfile_get(filename, hashkey);
+
+	if (!keystr) {
+		DBG("!keystr for %s", hashkey);
+		return -ENOENT;
+	}
+
+	DBG("keystr: %s", keystr);
+
+	this_addr_type = (uint8_t) strtol(&keystr[18], NULL, 16);
+
+	mask = (uint8_t) strtol(&keystr[18+3], NULL, 16);
+
+	/* Get Length, or if only verifying existance, mark as found */
+	if (length)
+		*length = (uint8_t) strtol(&keystr[18+3+3], NULL, 16);
+	else
+		found = 1;
+
+	if (auth)
+		*auth = (uint8_t) strtol(&keystr[18+3+3+3], NULL, 16);
+
+	len = LE_KEY_HDR_LEN;
+
+	if (mask & LE_STORE_LTK) {
+		if (this_type == KEY_TYPE_LTK) {
+			if ((max_dlen >= 10) && data && dlen) {
+				char tmp[] = {0, 0, 0};
+
+				for (i = 0; i < 16; i++) {
+					memcpy(tmp, &keystr[len], 2);
+					key[i] = (uint8_t) strtol(tmp, NULL, 16);
+					len+=2;
+				}
+
+				len++;
+
+				for (i = 0; i < 10; i++) {
+					memcpy(tmp, &keystr[len], 2);
+					data[i] = (uint8_t) strtol(tmp, NULL, 16);
+					len+=2;
+				}
+				*dlen = 10;
+				found = 1;
+			}
+			goto done;
+		}
+		len += LE_KEY_LTK_LEN;
+	}
+
+	if (mask & LE_STORE_IRK) {
+		if (this_type == KEY_TYPE_IRK) {
+			if ((max_dlen >= 7) && data && dlen) {
+				char tmp[] = {0, 0, 0};
+
+				for (i = 0; i < 16; i++) {
+					memcpy(tmp, &keystr[len], 2);
+					key[i] = (uint8_t) strtol(tmp, NULL, 16);
+					len+=2;
+				}
+
+				len++;
+
+				for (i = 0; i < 7; i++) {
+					data[i] = (uint8_t) strtol(&keystr[len], NULL, 16);
+					len+=3;
+				}
+				*dlen = 7;
+				found = 1;
+			}
+			goto done;
+		}
+		len += LE_KEY_IRK_LEN;
+	}
+
+	if (mask & LE_STORE_CSRK) {
+		if (this_type == KEY_TYPE_CSRK) {
+			if ((max_dlen >= 10) && data && dlen) {
+				char tmp[] = {0, 0, 0};
+
+				for (i = 0; i < 16; i++) {
+					memcpy(tmp, &keystr[len], 2);
+					key[i] = (uint8_t) strtol(tmp, NULL, 16);
+					len+=2;
+				}
+
+				len++;
+
+				for (i = 0; i < 4; i++) {
+					memcpy(tmp, &keystr[len], 2);
+					data[i] = (uint8_t) strtol(tmp, NULL, 16);
+					len+=2;
+				}
+				*dlen = 4;
+				found = 1;
+			}
+		}
+	}
+
+done:
+	free(keystr);
+
+	if (found) {
+		DBG("found");
+		return 0;
+	} else {
+		DBG("!found");
+		return -ENOENT;
+	}
+}
+
+int delete_le_keys(bdaddr_t *local, bdaddr_t *peer, uint32_t hash)
+{
+	char filename[PATH_MAX + 1], hashkey[9];
+
+	if (!local)
+		return -ENOENT;
+
+	create_filename(filename, PATH_MAX, local, "lekeys");
+
+	if (!hash && peer) {
+		char tmp[18];
+
+		ba2str(peer, tmp);
+		DBG("Finding LE device by Addr: %s", tmp);
+		textfile_foreach(filename, find_hash_by_str, tmp);
+
+		DBG("Found: %s???", tmp);
+		if (tmp[sizeof(uint32_t) * 2] == '\0') {
+			hash = (uint32_t) strtol(tmp, NULL, 16);
+		}
+	}
+
+	if (!hash)
+		return 0;
+
+	sprintf(hashkey, "%8.8X", hash);
+	DBG("Hash: %s???", hashkey);
+	textfile_del(filename, hashkey);
+
+	return 0;
+}
+
+uint32_t read_le_hash(bdaddr_t *local, bdaddr_t *peer, uint8_t *mid, uint8_t len)
+{
+	char filename[PATH_MAX + 1];
+	uint32_t hash = 0;
+
+	create_filename(filename, PATH_MAX, local, "lekeys");
+
+	create_file(filename, S_IRUSR | S_IWUSR);
+
+	/* Obtain hash from Addr */
+	if (peer) {
+		char tmp[18];
+
+		ba2str(peer, tmp);
+		textfile_foreach(filename, find_hash_by_str, tmp);
+
+		if (tmp[sizeof(uint32_t) * 2] == '\0') {
+			hash = (uint32_t) strtol(tmp, NULL, 16);
+		}
+	}
+
+	/* Obtain hash from Master ID */
+	if (!hash && len && mid) {
+		char io[21];
+		int i;
+
+		for (i = 0; i < 10; i++)
+			sprintf(io + (i * 2), "%2.2X", mid[i]);
+
+		textfile_foreach(filename, find_hash_by_str, io);
+
+		if (io[sizeof(uint32_t) * 2] == '\0')
+			hash = (uint32_t) strtol(io, NULL, 16);
+	}
+
+	/* Previously unseen device: Allocate hash */
+	if (!hash) {
+		char hashstr[9];
+		char *str = textfile_get(filename, "lasthash");
+
+		if (str) {
+			hash = (uint32_t) strtol(str, NULL, 16);
+			free(str);
+		}
+		hash++;
+		sprintf(hashstr, "%8.8X", hash);
+		textfile_put(filename, "lasthash", hashstr);
+	}
+
+	return hash;
 }
 
 int read_pin_code(bdaddr_t *local, bdaddr_t *peer, char *pin)
@@ -934,24 +1346,30 @@ sdp_record_t *find_record_in_list(sdp_list_t *recs, const char *uuid)
 	for (seq = recs; seq; seq = seq->next) {
 		sdp_record_t *rec = (sdp_record_t *) seq->data;
 		sdp_list_t *svcclass = NULL;
+		sdp_list_t *svcclass_ext = NULL;
 		char *uuid_str;
 
 		if (sdp_get_service_classes(rec, &svcclass) < 0)
 			continue;
 
 		/* Extract the uuid */
-		uuid_str = bt_uuid2string(svcclass->data);
-		if (!uuid_str)
-			continue;
+		svcclass_ext = svcclass;
+		do {
+			uuid_str = bt_uuid2string(svcclass_ext->data);
+			if (!uuid_str)
+				continue;
 
-		if (!strcasecmp(uuid_str, uuid)) {
-			sdp_list_free(svcclass, free);
+			if (!strcasecmp(uuid_str, uuid)) {
+				sdp_list_free(svcclass, free);
+				free(uuid_str);
+				return rec;
+			}
+
 			free(uuid_str);
-			return rec;
-		}
+
+		} while (svcclass_ext = svcclass_ext->next);
 
 		sdp_list_free(svcclass, free);
-		free(uuid_str);
 	}
 	return NULL;
 }

@@ -42,7 +42,8 @@ LOCAL_SHARED_LIBRARIES := \
 	libbluetoothd \
 	libbtio \
 	libdbus \
-	libglib
+	libglib \
+	libcutils
 
 
 LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/bluez-plugin
@@ -83,6 +84,7 @@ LOCAL_C_INCLUDES:= \
 	system/bluetooth/bluez-clean-headers
 
 LOCAL_SHARED_LIBRARIES := \
+	libutils \
 	libcutils
 
 ifneq ($(wildcard system/bluetooth/legacy.mk),)

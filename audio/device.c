@@ -60,7 +60,7 @@
 
 #define AUDIO_INTERFACE "org.bluez.Audio"
 
-#define CONTROL_CONNECT_TIMEOUT 2
+#define CONTROL_CONNECT_TIMEOUT 4
 #define AVDTP_CONNECT_TIMEOUT 1
 #define HEADSET_CONNECT_TIMEOUT 1
 
@@ -828,8 +828,15 @@ int audio_device_request_authorization(struct audio_device *dev,
 int audio_device_cancel_authorization(struct audio_device *dev,
 					authorization_cb cb, void *user_data)
 {
-	struct dev_priv *priv = dev->priv;
+	struct dev_priv *priv;
 	GSList *l, *next;
+
+	if (dev)
+		priv = dev->priv;
+	else {
+		DBG("NULL argument for device!!!");
+		return 0;
+	}
 
 	for (l = priv->auths; l != NULL; l = next) {
 		struct service_auth *auth = l->data;

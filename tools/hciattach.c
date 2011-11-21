@@ -317,11 +317,6 @@ static int ath3k_pm(int fd, struct uart_t *u, struct termios *ti)
 	return ath3k_post(fd, u->pm);
 }
 
-static int qualcomm(int fd, struct uart_t *u, struct termios *ti)
-{
-	return qualcomm_init(fd, u->speed, ti, u->bdaddr);
-}
-
 static int read_check(int fd, void *buf, int count)
 {
 	int res;

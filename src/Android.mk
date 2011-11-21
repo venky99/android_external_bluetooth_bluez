@@ -12,7 +12,6 @@ LOCAL_SRC_FILES:= \
 	agent.c \
 	dbus-common.c \
 	device.c \
-	eir.c \
 	error.c \
 	event.c \
 	glib-helper.c \
