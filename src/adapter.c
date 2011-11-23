@@ -2107,6 +2107,129 @@ static DBusMessage *remove_service_record(DBusConnection *conn,
 	return dbus_message_new_method_return(msg);
 }
 
+static int add_sim_access_record(struct btd_adapter* adapter)
+{
+
+	sdp_list_t *svclass_id, *pfseq, *apseq, *root;
+	uuid_t root_uuid, svclass_uuid, ga_svclass_uuid, l2cap_uuid, rfcomm_uuid;
+	sdp_profile_desc_t profile;
+	sdp_list_t *aproto, *proto[2];
+	sdp_record_t *record;
+	uint8_t u8 = 15; //Keeping the same channel what QC using in GB
+	sdp_data_t *channel;
+	uint8_t netid = 0x01; // ???? profile document
+	sdp_data_t *network = sdp_data_alloc(SDP_UINT8, &netid);
+	int ret = 0;
+
+	record = sdp_record_alloc();
+	if (!record) return -1;
+
+	sdp_uuid16_create(&root_uuid, PUBLIC_BROWSE_GROUP);
+	root = sdp_list_append(0, &root_uuid);
+	sdp_set_browse_groups(record, root);
+
+	sdp_uuid16_create(&svclass_uuid, SAP_SVCLASS_ID);
+	svclass_id = sdp_list_append(0, &svclass_uuid);
+	sdp_uuid16_create(&ga_svclass_uuid, GENERIC_TELEPHONY_SVCLASS_ID);
+	svclass_id = sdp_list_append(svclass_id, &ga_svclass_uuid);
+	sdp_set_service_classes(record, svclass_id);
+
+	sdp_uuid16_create(&profile.uuid, SAP_PROFILE_ID);
+	profile.version = 0x0101;
+	pfseq = sdp_list_append(0, &profile);
+	sdp_set_profile_descs(record, pfseq);
+
+	sdp_uuid16_create(&l2cap_uuid, L2CAP_UUID);
+	proto[0] = sdp_list_append(0, &l2cap_uuid);
+	apseq = sdp_list_append(0, proto[0]);
+
+	sdp_uuid16_create(&rfcomm_uuid, RFCOMM_UUID);
+	proto[1] = sdp_list_append(0, &rfcomm_uuid);
+	channel = sdp_data_alloc(SDP_UINT8, &u8);
+	proto[1] = sdp_list_append(proto[1], channel);
+	apseq = sdp_list_append(apseq, proto[1]);
+
+	aproto = sdp_list_append(0, apseq);
+	sdp_set_access_protos(record, aproto);
+
+	sdp_set_info_attr(record, "SIM Access", 0, 0);
+
+	if (add_record_to_server(&adapter->bdaddr, record) < 0)
+		ret = -1;
+
+	sdp_data_free(channel);
+	sdp_list_free(proto[0], 0);
+	sdp_list_free(proto[1], 0);
+	sdp_list_free(apseq, 0);
+	sdp_list_free(aproto, 0);
+
+	if (!ret)
+		return record->handle;
+	return ret;
+}
+
+
+
+static int add_dialup_network_record(struct btd_adapter* adapter)
+{
+	sdp_list_t *svclass_id, *pfseq, *apseq, *root;
+	uuid_t root_uuid, svclass_uuid, ga_svclass_uuid, l2cap_uuid, rfcomm_uuid;
+	sdp_profile_desc_t profile;
+	sdp_list_t *aproto, *proto[2];
+	sdp_record_t *record;
+	uint8_t u8 = 1; //Keeping the same channel what QC using in GB
+	sdp_data_t *channel;
+	uint8_t netid = 0x01; // ???? profile document
+	sdp_data_t *network = sdp_data_alloc(SDP_UINT8, &netid);
+	int ret = 0;
+
+	record = sdp_record_alloc();
+	if (!record) return -1;
+
+	sdp_uuid16_create(&root_uuid, PUBLIC_BROWSE_GROUP);
+	root = sdp_list_append(0, &root_uuid);
+	sdp_set_browse_groups(record, root);
+
+	sdp_uuid16_create(&svclass_uuid, DIALUP_NET_SVCLASS_ID);
+	svclass_id = sdp_list_append(0, &svclass_uuid);
+	sdp_uuid16_create(&ga_svclass_uuid, GENERIC_NETWORKING_SVCLASS_ID);
+	svclass_id = sdp_list_append(svclass_id, &ga_svclass_uuid);
+	sdp_set_service_classes(record, svclass_id);
+
+	sdp_uuid16_create(&profile.uuid, DIALUP_NET_PROFILE_ID);
+	profile.version = 0x0100;
+	pfseq = sdp_list_append(0, &profile);
+	sdp_set_profile_descs(record, pfseq);
+
+	sdp_uuid16_create(&l2cap_uuid, L2CAP_UUID);
+	proto[0] = sdp_list_append(0, &l2cap_uuid);
+	apseq = sdp_list_append(0, proto[0]);
+
+	sdp_uuid16_create(&rfcomm_uuid, RFCOMM_UUID);
+	proto[1] = sdp_list_append(0, &rfcomm_uuid);
+	channel = sdp_data_alloc(SDP_UINT8, &u8);
+	proto[1] = sdp_list_append(proto[1], channel);
+	apseq = sdp_list_append(apseq, proto[1]);
+
+	aproto = sdp_list_append(0, apseq);
+	sdp_set_access_protos(record, aproto);
+
+	sdp_set_info_attr(record, "Dial-Up Networking", 0, 0);
+
+	if (add_record_to_server(&adapter->bdaddr, record) < 0)
+		ret = -1;
+
+	sdp_data_free(channel);
+	sdp_list_free(proto[0], 0);
+	sdp_list_free(proto[1], 0);
+	sdp_list_free(apseq, 0);
+	sdp_list_free(aproto, 0);
+
+	if (!ret)
+		return record->handle;
+	return ret;
+}
+
 static int add_headset_ag_record(struct btd_adapter* adapter)
 {
 	sdp_list_t *svclass_id, *pfseq, *apseq, *root;
@@ -2301,6 +2424,79 @@ static int add_pbap_pse_record(struct btd_adapter *adapter)
 		return record->handle;
 	return ret;
 }
+static int add_ftp(struct btd_adapter *adapter)
+{
+	sdp_list_t *svclass_id, *pfseq, *apseq, *root;
+	uuid_t root_uuid, ftrn_uuid, l2cap_uuid, rfcomm_uuid, obex_uuid;
+	sdp_profile_desc_t profile[1];
+	sdp_list_t *aproto, *proto[3];
+	sdp_record_t *record;
+	uint8_t u8  = 20;
+	sdp_data_t *channel;
+	int ret = 0;
+        int ftppsm = 0x1489;
+        sdp_data_t *goeppsm = NULL;
+
+        record = sdp_record_alloc();
+        if(!record)  return -1;
+
+	sdp_uuid16_create(&root_uuid, PUBLIC_BROWSE_GROUP);
+	root = sdp_list_append(0, &root_uuid);
+	sdp_set_browse_groups(record, root);
+
+	sdp_uuid16_create(&ftrn_uuid, OBEX_FILETRANS_SVCLASS_ID);
+	svclass_id = sdp_list_append(0, &ftrn_uuid);
+	sdp_set_service_classes(record, svclass_id);
+
+	/*
+	 * Implicitly set FTP profile version to 1.2 when adding a record
+         * containing a PSM (for OBEX-over-L2CAP)
+	 */
+
+	sdp_uuid16_create(&profile[0].uuid, OBEX_FILETRANS_PROFILE_ID);
+	profile[0].version =  0x0102;
+	pfseq = sdp_list_append(0, profile);
+	sdp_set_profile_descs(record, pfseq);
+
+	sdp_uuid16_create(&l2cap_uuid, L2CAP_UUID);
+	proto[0] = sdp_list_append(0, &l2cap_uuid);
+	apseq = sdp_list_append(0, proto[0]);
+
+	sdp_uuid16_create(&rfcomm_uuid, RFCOMM_UUID);
+	proto[1] = sdp_list_append(0, &rfcomm_uuid);
+	channel = sdp_data_alloc(SDP_UINT8, &u8);
+	proto[1] = sdp_list_append(proto[1], channel);
+	apseq = sdp_list_append(apseq, proto[1]);
+
+	sdp_uuid16_create(&obex_uuid, OBEX_UUID);
+	proto[2] = sdp_list_append(0, &obex_uuid);
+	apseq = sdp_list_append(apseq, proto[2]);
+
+	goeppsm = sdp_data_alloc(SDP_UINT16, &ftppsm);
+	if (goeppsm) {
+		sdp_attr_add(record, SDP_ATTR_GOEP_L2CAP_PSM, goeppsm);
+	}
+
+	aproto = sdp_list_append(0, apseq);
+	sdp_set_access_protos(record, aproto);
+
+	sdp_set_info_attr(record, "OBEX File Transfer", 0, 0);
+
+        if(add_record_to_server(&adapter->bdaddr,record)<0)
+                ret = -1;
+
+	sdp_data_free(channel);
+	sdp_list_free(proto[0], 0);
+	sdp_list_free(proto[1], 0);
+	sdp_list_free(proto[2], 0);
+	sdp_list_free(apseq, 0);
+	sdp_list_free(aproto, 0);
+
+        if (!ret)
+        return record->handle;
+
+	return ret;
+}
 
 static int add_opush_record(struct btd_adapter *adapter)
 {
@@ -2311,6 +2507,8 @@ static int add_opush_record(struct btd_adapter *adapter)
 	sdp_record_t *record;
 	uint8_t u8 = 12;
 	sdp_data_t *channel;
+	uint16_t psm = 0x1487;
+	sdp_data_t *goepsm = NULL;
 #ifdef ANDROID
 	uint8_t formats[] = { 0x01, 0x02, 0xff };
 #else
@@ -2334,7 +2532,7 @@ static int add_opush_record(struct btd_adapter *adapter)
 	sdp_set_service_classes(record, svclass_id);
 
 	sdp_uuid16_create(&profile[0].uuid, OBEX_OBJPUSH_PROFILE_ID);
-	profile[0].version = 0x0100;
+	profile[0].version = 0x0102;
 	pfseq = sdp_list_append(0, profile);
 	sdp_set_profile_descs(record, pfseq);
 
@@ -2351,6 +2549,10 @@ static int add_opush_record(struct btd_adapter *adapter)
 	sdp_uuid16_create(&obex_uuid, OBEX_UUID);
 	proto[2] = sdp_list_append(0, &obex_uuid);
 	apseq = sdp_list_append(apseq, proto[2]);
+	goepsm = sdp_data_alloc(SDP_UINT16, &psm);
+	if(goepsm){
+		sdp_attr_add(record, SDP_ATTR_GOEP_L2CAP_PSM, goepsm);
+        }
 
 	aproto = sdp_list_append(0, apseq);
 	sdp_set_access_protos(record, aproto);
@@ -2407,6 +2609,16 @@ static DBusMessage *add_reserved_service_records(DBusConnection *conn,
 				break;
 			case OBEX_OBJPUSH_SVCLASS_ID:
 				ret = add_opush_record(adapter);
+				break;
+			/*Extend this QC prop profiles*/
+			case DIALUP_NET_SVCLASS_ID:
+				ret = add_dialup_network_record(adapter);
+				break;
+			case SAP_SVCLASS_ID:
+				ret = add_sim_access_record(adapter);
+				break;
+			case OBEX_FILETRANS_SVCLASS_ID:
+				ret = add_ftp(adapter) ;
 				break;
 		}
 		if (ret < 0) {
