@@ -595,8 +595,12 @@ void btd_event_device_found(bdaddr_t *local, bdaddr_t *peer, uint8_t type,
 			write_device_name(local, peer, eir_data.name);
 			name_status = NAME_NOT_REQUIRED;
 			dev_name = eir_data.name;
-		} else if (name == NULL)
+		} else if (name == NULL) {
 			dev_name = eir_data.name;
+			/* We may need to use Short name for LE */
+			if (le)
+				name_status = NAME_SHORT;
+		}
 	}
 
 	adapter_update_found_devices(adapter, peer, rssi, class, dev_name,

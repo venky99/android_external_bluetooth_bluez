@@ -4010,11 +4010,14 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 			broadcaster = TRUE;
 
 		/* Don't emit LE result if this is a Dual mode device */
-		if (!(dev->flags & EIR_BREDR_UNSUP)) {
-			dev->le = 0;
-			if (device)
-				device_set_type(device, DEVICE_TYPE_DUALMODE);
-			return;
+		if (dev->flags != -1) {
+			if (!(dev->flags & EIR_BREDR_UNSUP)) {
+				dev->le = 0;
+				if (device)
+					device_set_type(device,
+							DEVICE_TYPE_DUALMODE);
+				return;
+			}
 		}
 
 		emit_device_found(adapter->path, paddr,
@@ -4162,14 +4165,32 @@ void adapter_update_found_devices(struct btd_adapter *adapter, bdaddr_t *bdaddr,
 			dev->alias = g_strdup(alias);
 
 		dev->name_status = name_status;
-	} else if (dev->rssi == rssi && dev->flags == flags && dev->le == le)
+		dev->flags = -1;
+		dev->le = le;
+		dev->legacy = legacy;
+	} else if (dev->rssi == rssi && dev->flags == flags && !le && !dev->le)
 		return;
 
-	dev->rssi = rssi;
-	dev->le = le;
-	dev->class = class;
-	dev->legacy = legacy;
-	dev->flags = flags;
+	if (!new_dev && name) {
+		if (dev->name_status == NAME_SHORT || !dev->name) {
+			g_free(dev->name);
+			dev->name = g_strdup(name);
+			dev->name_status = name_status;
+		}
+	}
+
+	if (flags != -1)
+		dev->flags = flags;
+
+	/* Only cache Class for non-LE devices */
+	/* Only cache RSSI if this find same kind as last */
+	if (!le) {
+		dev->le = 0;
+		dev->class = class;
+		dev->rssi = rssi;
+	} else if (dev->le)
+		dev->rssi = rssi;
+
 
 	adapter->found_devices = g_slist_sort(adapter->found_devices,
 						(GCompareFunc) dev_rssi_cmp);

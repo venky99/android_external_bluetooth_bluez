@@ -59,6 +59,7 @@ typedef enum {
 	NAME_NOT_REQUIRED, /* used by get remote name without name resolving */
 	NAME_REQUIRED,      /* remote name needs be resolved       */
 	NAME_REQUESTED,    /* HCI remote name request was sent    */
+	NAME_SHORT,	/* Short name RXed in EIR */
 } name_status_t;
 
 struct btd_adapter;
@@ -87,7 +88,7 @@ struct remote_dev_info {
 	size_t uuid_count;
 	GSList *services;
 	uint8_t bdaddr_type;
-	uint8_t flags;
+	int flags;
 };
 
 void btd_adapter_start(struct btd_adapter *adapter);
