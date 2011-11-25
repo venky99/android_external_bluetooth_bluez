@@ -91,6 +91,8 @@ static GSList *adapter_drivers = NULL;
 static GSList *ops_candidates = NULL;
 
 const struct btd_adapter_ops *adapter_ops = NULL;
+static int mas0_handle;
+static int mas1_handle;
 
 struct session_req {
 	struct btd_adapter	*adapter;
@@ -2107,6 +2109,89 @@ static DBusMessage *remove_service_record(DBusConnection *conn,
 	return dbus_message_new_method_return(msg);
 }
 
+static int add_mas_record(struct btd_adapter* adapter, int channel_num, uint16_t masid, uint8_t sprtd_msg)
+{
+	sdp_list_t *svclass_id, *pfseq, *apseq, *root;
+	uuid_t root_uuid, svclass_uuid, ga_svclass_uuid, l2cap_uuid;
+        uuid_t rfcomm_uuid, obex_uuid;
+	sdp_profile_desc_t profile;
+	sdp_list_t *aproto, *proto[3];
+	sdp_record_t *record = NULL;
+	uint8_t u8 = channel_num;
+	sdp_data_t *channel = NULL;
+	sdp_record_t *mas_id = NULL;
+	sdp_record_t *supported_msg = NULL;
+	int ret = 0;
+
+	record = sdp_record_alloc();
+	if (!record) return -1;
+
+	sdp_uuid16_create(&root_uuid, PUBLIC_BROWSE_GROUP);
+	root = sdp_list_append(0, &root_uuid);
+	sdp_set_browse_groups(record, root);
+
+	sdp_uuid16_create(&svclass_uuid, OBEX_MAS_SVCLASS_ID);
+	svclass_id = sdp_list_append(0, &svclass_uuid);
+	sdp_set_service_classes(record, svclass_id);
+
+	sdp_uuid16_create(&profile.uuid, OBEX_MAP_PROFILE_ID);
+	profile.version = 0x0100;
+	pfseq = sdp_list_append(0, &profile);
+	sdp_set_profile_descs(record, pfseq);
+
+	sdp_uuid16_create(&l2cap_uuid, L2CAP_UUID);
+	proto[0] = sdp_list_append(0, &l2cap_uuid);
+	apseq = sdp_list_append(0, proto[0]);
+
+	sdp_uuid16_create(&rfcomm_uuid, RFCOMM_UUID);
+	proto[1] = sdp_list_append(0, &rfcomm_uuid);
+	channel = sdp_data_alloc(SDP_UINT8, &u8);
+	proto[1] = sdp_list_append(proto[1], channel);
+	apseq = sdp_list_append(apseq, proto[1]);
+
+        sdp_uuid16_create(&obex_uuid, OBEX_UUID);
+        proto[2] = sdp_list_append(0, &obex_uuid);
+        apseq = sdp_list_append(apseq, proto[2]);
+
+	aproto = sdp_list_append(0, apseq);
+	sdp_set_access_protos(record, aproto);
+
+	mas_id = sdp_data_alloc(SDP_UINT8, &masid);
+	if (mas_id) {
+		sdp_attr_add(record, SDP_ATTR_MAS_INSTANCE_ID, mas_id);
+	}
+
+	supported_msg =  sdp_data_alloc(SDP_UINT8, &sprtd_msg);
+	if (supported_msg) {
+	        sdp_attr_add(record, SDP_ATTR_SUPPORTED_MESSAGE_TYPES, supported_msg);
+	}
+
+	sdp_set_info_attr(record, "OBEX Message Access", 0, 0);
+
+	if (add_record_to_server(&adapter->bdaddr, record) < 0)
+		ret = -1;
+
+	sdp_data_free(channel);
+	sdp_list_free(proto[0], 0);
+	sdp_list_free(proto[1], 0);
+	sdp_list_free(apseq, 0);
+	sdp_list_free(aproto, 0);
+
+	if (!ret)
+		return record->handle;
+	return ret;
+}
+
+static int add_mas0_record(struct btd_adapter* adapter)
+{
+	return add_mas_record(adapter, 16, 0, 0x0E);
+}
+
+static int add_mas1_record(struct btd_adapter* adapter)
+{
+	return add_mas_record(adapter, 17, 1, 0x01);
+}
+
 static int add_sim_access_record(struct btd_adapter* adapter)
 {
 
@@ -2620,6 +2705,17 @@ static DBusMessage *add_reserved_service_records(DBusConnection *conn,
 			case OBEX_FILETRANS_SVCLASS_ID:
 				ret = add_ftp(adapter) ;
 				break;
+			case OBEX_MAS_SVCLASS_ID:
+				/* remember the mas1 handle internally*/
+
+				/* Add MAS0 and MAS1 record in this case.
+				 * TODO: Need to address this MAS instances by
+				 * introducing new interface. to be removed,
+				 * once it is addressed
+				 */
+				ret = mas0_handle = add_mas0_record(adapter);
+				mas1_handle = add_mas1_record(adapter);
+				break;
 		}
 		if (ret < 0) {
 			g_free(handles);
@@ -2646,10 +2742,25 @@ static DBusMessage *remove_reserved_service_records(DBusConnection *conn,
 				&handles, &len, DBUS_TYPE_INVALID) == FALSE)
 		return btd_error_invalid_args(msg);
 
-	for (i = 0; i < len; i++)
+	for (i = 0; i < len; i++) {
 		if (remove_record_from_server(handles[i]))
 			return g_dbus_create_error(msg,
 					ERROR_INTERFACE ".Failed", "Failed to remove sdp record");
+		if (handles[i] == mas0_handle) {
+			/* remove the MAS1 record as well if removal request is
+			 * for MAS0.
+			 * TODO: Need to address this MAS instance by
+			 * introducing new interface. To be removed,
+			 * once it is addressed
+			 */
+			if (mas1_handle && remove_record_from_server(mas1_handle))
+				return g_dbus_create_error(msg,
+					ERROR_INTERFACE ".Failed", "Failed to remove sdp record");
+			/* clear the mas handles*/
+			mas0_handle = 0;
+			mas1_handle = 0;
+		}
+	}
 
 	return dbus_message_new_method_return(msg);
 }
