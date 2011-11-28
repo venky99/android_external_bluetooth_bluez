@@ -2399,3 +2399,19 @@ struct avdtp_stream *a2dp_sep_get_stream(struct a2dp_sep *sep)
 {
 	return sep->stream;
 }
+
+gboolean a2dp_is_reconfig(struct avdtp *session)
+{
+	struct a2dp_setup *setup;
+	gboolean is_reconfig;
+
+	DBG("a2dp_is_reconfig");
+	if (!session)
+		return FALSE;
+	setup = a2dp_setup_get(session);
+	if (!setup)
+		return FALSE;
+	is_reconfig = setup->reconfigure;
+	setup_unref(setup);
+	return is_reconfig ;
+}
