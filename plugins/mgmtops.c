@@ -71,7 +71,15 @@ static struct controller_info {
 	gboolean pairable;
 	uint8_t sec_mode;
 	GSList *connections;
+	GSList *mgmt_event_callback;
 } *controllers = NULL;
+
+struct mgmt_ev_cb_data {
+	bt_hci_result_t cb;
+	uint8_t event;
+	gpointer caller_data;
+	bdaddr_t dst;
+};
 
 static int mgmt_sock = -1;
 static guint mgmt_watch = 0;
@@ -152,11 +160,27 @@ static void mgmt_index_added(int sk, uint16_t index)
 
 static void remove_controller(uint16_t index)
 {
+	struct controller_info *info;
+	GSList *l, *next;
 	if (index > max_index)
 		return;
 
 	if (!controllers[index].valid)
 		return;
+
+	info = &controllers[index];
+	DBG("Controller removed, clearing callback list");
+	for (l = info->mgmt_event_callback; l != NULL; l = next) {
+		struct mgmt_ev_cb_data *cb_data = l->data;
+		next = g_slist_next(l);
+
+		info->mgmt_event_callback = g_slist_delete_link (
+			info->mgmt_event_callback, l);
+		if (cb_data != NULL) {
+			g_free(cb_data);
+		}
+	}
+
 
 	btd_manager_unregister_adapter(index);
 
@@ -216,6 +240,7 @@ static int mgmt_update_powered(int index, uint8_t powered)
 	struct btd_adapter *adapter;
 	gboolean pairable;
 	uint8_t on_mode;
+	GSList *l, *next;
 
 	if (index > max_index) {
 		error("Unexpected index %u", index);
@@ -236,6 +261,18 @@ static int mgmt_update_powered(int index, uint8_t powered)
 		info->connectable = FALSE;
 		info->pairable = FALSE;
 		info->discoverable = FALSE;
+
+		DBG("Bluetooth is turning off, clearing callback list");
+		for (l = info->mgmt_event_callback; l != NULL; l = next) {
+			struct mgmt_ev_cb_data *cb_data = l->data;
+			next = g_slist_next(l);
+
+			info->mgmt_event_callback = g_slist_delete_link(
+				info->mgmt_event_callback, l);
+			if (cb_data != NULL) {
+				g_free(cb_data);
+			}
+		}
 
 		btd_adapter_stop(adapter);
 		return 0;
@@ -761,6 +798,54 @@ static void mgmt_user_passkey_request(int sk, uint16_t index, void *buf,
 		mgmt_confirm_reply(index, &ev->bdaddr, FALSE);
 	}
 }
+
+static void mgmt_encrypt_change_event(int sk, uint16_t index, void *buf,
+								size_t len)
+{
+	struct mgmt_ev_encrypt_change *ev = buf;
+	struct controller_info *info;
+	char addr[18];
+	int err;
+	GSList *l, *next;
+
+	if (len < sizeof(*ev)) {
+		error("Too small encrypt_change event");
+		return;
+	}
+
+	ba2str(&ev->bdaddr, addr);
+
+	DBG("hci%u %s encrypt change event", index, addr);
+
+	if (index > max_index) {
+		error("Unexpected index %u in encrypt_change event", index);
+		return;
+	}
+
+	info = &controllers[index];
+
+	for (l = info->mgmt_event_callback; l != NULL; l = next) {
+		struct mgmt_ev_cb_data *cb_data = l->data;
+		next = g_slist_next(l);
+
+		if (cb_data == NULL){
+			info->mgmt_event_callback = g_slist_delete_link(
+				info->mgmt_event_callback, l);
+			continue;
+		}
+
+		if (cb_data->event == MGMT_EV_ENCRYPT_CHANGE) {
+			if (bacmp(&cb_data->dst, &ev->bdaddr) == 0) {
+				DBG("Found cb for ENCRYPT_CHANGE");
+				cb_data->cb(ev->status, cb_data->caller_data);
+				info->mgmt_event_callback = g_slist_delete_link(
+					info->mgmt_event_callback, l);
+				g_free(cb_data);
+			}
+		}
+	}
+}
+
 
 static void uuid_to_uuid128(uuid_t *uuid128, const uuid_t *uuid)
 {
@@ -1351,6 +1436,7 @@ static void mgmt_auth_failed(int sk, uint16_t index, void *buf, size_t len)
 {
 	struct controller_info *info;
 	struct mgmt_ev_auth_failed *ev = buf;
+	GSList *l, *next;
 
 	if (len < sizeof(*ev)) {
 		error("Too small mgmt_auth_failed event packet");
@@ -1365,6 +1451,26 @@ static void mgmt_auth_failed(int sk, uint16_t index, void *buf, size_t len)
 	}
 
 	info = &controllers[index];
+	for (l = info->mgmt_event_callback; l != NULL; l = next) {
+		struct mgmt_ev_cb_data *cb_data = l->data;
+		next = g_slist_next(l);
+
+		if (cb_data == NULL) {
+			info->mgmt_event_callback = g_slist_delete_link(
+				info->mgmt_event_callback, l);
+			continue;
+		}
+
+		if (cb_data->event == MGMT_EV_ENCRYPT_CHANGE) {
+			if (bacmp(&cb_data->dst, &ev->bdaddr) == 0) {
+				DBG("Found cb for ENCRYPT_CHANGE");
+				cb_data->cb(ev->status, cb_data->caller_data);
+				info->mgmt_event_callback = g_slist_delete_link(
+					info->mgmt_event_callback, l);
+				g_free(cb_data);
+			}
+		}
+	}
 
 	btd_event_bonding_complete(&info->bdaddr, &ev->bdaddr, ev->status);
 }
@@ -1594,6 +1700,9 @@ static gboolean mgmt_event(GIOChannel *io, GIOCondition cond, gpointer user_data
 		break;
 	case MGMT_EV_USER_PASSKEY_REQUEST:
 		mgmt_user_passkey_request(sk, index, buf + MGMT_HDR_SIZE, len);
+		break;
+	case MGMT_EV_ENCRYPT_CHANGE:
+		mgmt_encrypt_change_event(sk, index, buf + MGMT_HDR_SIZE, len);
 		break;
 	default:
 		error("Unknown Management opcode %u (index %u)", opcode, index);
@@ -1917,11 +2026,42 @@ static int mgmt_encrypt_link(int index, bdaddr_t *dst, bt_hci_result_t cb,
 							gpointer user_data)
 {
 	char addr[18];
+	struct mgmt_ev_cb_data *cb_data;
+	struct controller_info *info;
+	char buf[MGMT_HDR_SIZE + sizeof(struct mgmt_cp_encrypt_link)];
+	struct mgmt_hdr *hdr = (void *) buf;
+	struct mgmt_cp_encrypt_link *cp = (void *) &buf[sizeof(*hdr)];
 
 	ba2str(dst, addr);
 	DBG("index %d addr %s", index, addr);
 
-	return -ENOSYS;
+	info = &controllers[index];
+
+	memset(buf, 0, sizeof(buf));
+	hdr->opcode = htobs(MGMT_OP_ENCRYPT_LINK);
+	hdr->len = htobs(sizeof(*cp));
+	hdr->index = htobs(index);
+
+	cp->enable = 1;
+	bacpy(&cp->bdaddr, dst);
+
+	cb_data = g_new0(struct mgmt_ev_cb_data, 1);
+	cb_data->cb = cb;
+	cb_data->event = MGMT_EV_ENCRYPT_CHANGE;
+	cb_data->caller_data = user_data;
+	bacpy(&cb_data->dst, dst);
+
+	if (write(mgmt_sock, buf, sizeof(buf)) < 0) {
+		if (errno != EINPROGRESS) {
+			g_free(cb_data);
+			return -errno;
+		}
+	}
+
+	info->mgmt_event_callback = g_slist_append(info->mgmt_event_callback,
+							cb_data);
+
+	return 0;
 }
 
 static int mgmt_set_did(int index, uint16_t vendor, uint16_t product,
