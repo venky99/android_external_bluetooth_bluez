@@ -4010,7 +4010,7 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 				"Paired", DBUS_TYPE_BOOLEAN, &paired,
 				"Broadcaster", DBUS_TYPE_BOOLEAN, &broadcaster,
 				"UUIDs", DBUS_TYPE_ARRAY, &dev->uuids, uuid_count,
-//				"Type", DBUS_TYPE_STRING, &dev_type,
+				"Type", DBUS_TYPE_STRING, &dev_type,
 				NULL);
 		return;
 	}
@@ -4036,7 +4036,7 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 			"LegacyPairing", DBUS_TYPE_BOOLEAN, &dev->legacy,
 			"Paired", DBUS_TYPE_BOOLEAN, &paired,
 			"UUIDs", DBUS_TYPE_ARRAY, &dev->uuids, uuid_count,
-//			"Type", DBUS_TYPE_STRING, &dev_type,
+			"Type", DBUS_TYPE_STRING, &dev_type,
 			NULL);
 
 	g_free(alias);
