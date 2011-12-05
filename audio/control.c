@@ -775,6 +775,10 @@ static gboolean control_cb(GIOChannel *chan, GIOCondition cond,
 			uint8_t index = 0;
 			for (index = 0; index < att_count; index++) {
 				int att_val = htonl(*att_id);
+				if(att_val == METADATA_GENRE){
+					att_count--;  // we donot support genre
+					continue;
+				}
 				att_mask |=  1 << (att_val - 1);
 				att_id += 1;
 			}
