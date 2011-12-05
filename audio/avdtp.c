@@ -89,6 +89,7 @@
 #define REQ_TIMEOUT 6
 #define ABORT_TIMEOUT 2
 #define DISCONNECT_TIMEOUT 1
+#define STREAM_SETUP_TIMEOUT 3 // 2 seconds for SDP to start
 #define STREAM_TIMEOUT 20
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
@@ -683,7 +684,7 @@ static void remove_disconnect_timer(struct avdtp *session)
 	session->stream_setup = FALSE;
 }
 
-static void set_disconnect_timer(struct avdtp *session)
+static void set_disconnect_timer(struct avdtp *session, int timeout)
 {
 	if (session->dc_timer)
 		remove_disconnect_timer(session);
@@ -693,7 +694,7 @@ static void set_disconnect_timer(struct avdtp *session)
 		return;
 	}
 
-	session->dc_timer = g_timeout_add_seconds(DISCONNECT_TIMEOUT,
+	session->dc_timer = g_timeout_add_seconds(timeout,
 						disconnect_timeout,
 						session);
 }
@@ -1212,7 +1213,7 @@ void avdtp_unref(struct avdtp *session)
 		}
 
 		if (session->io)
-			set_disconnect_timer(session);
+			set_disconnect_timer(session, DISCONNECT_TIMEOUT);
 		else if (!session->free_lock) /* Drop the local ref if we
 						 aren't connected */
 			session->ref--;
@@ -2163,7 +2164,7 @@ static gboolean session_cb(GIOChannel *chan, GIOCondition cond,
 		}
 
 		if (session->ref == 1 && !session->streams && !session->req)
-			set_disconnect_timer(session);
+			set_disconnect_timer(session, DISCONNECT_TIMEOUT);
 
 		if (session->streams && session->dc_timer)
 			remove_disconnect_timer(session);
@@ -2387,7 +2388,7 @@ static void avdtp_connect_cb(GIOChannel *chan, GError *err, gpointer user_data)
 						NULL);
 
 		if (session->stream_setup) {
-			set_disconnect_timer(session);
+			set_disconnect_timer(session, STREAM_SETUP_TIMEOUT);
 			avdtp_set_auto_disconnect(session, FALSE);
 		}
 	} else if (session->pending_open)
