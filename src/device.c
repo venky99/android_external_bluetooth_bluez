@@ -2550,11 +2550,9 @@ void device_bonding_complete(struct btd_device *device, uint8_t status)
 
 	device_auth_req_free(device);
 
-	/* If we're already paired nothing more is needed */
-	if (device->paired)
-		return;
-
-	device_set_paired(device, TRUE);
+	/* If we're already paired no need to update device paried */
+	if (!(device->paired))
+		device_set_paired(device, TRUE);
 
 	/* If we were initiators start service discovery immediately.
 	 * However if the other end was the initator wait a few seconds
