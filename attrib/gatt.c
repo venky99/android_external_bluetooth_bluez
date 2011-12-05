@@ -342,7 +342,7 @@ guint gatt_discover_char(GAttrib *attrib, uint16_t start, uint16_t end,
 	if (dc == NULL)
 		return 0;
 
-	dc->attrib = g_attrib_ref(attrib);
+	dc->attrib = attrib;
 	dc->cb = func;
 	dc->user_data = user_data;
 	dc->end = end;
