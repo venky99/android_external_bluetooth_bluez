@@ -782,11 +782,14 @@ failed:
 
 	unix_ipc_error(client, BT_SET_CONFIGURATION, EIO);
 
+	if (a2dp->sep) {
+		a2dp_sep_unlock(a2dp->sep, a2dp->session);
+		a2dp->sep = NULL;
+	}
 	avdtp_unref(a2dp->session);
 
 	a2dp->session = NULL;
 	a2dp->stream = NULL;
-	a2dp->sep = NULL;
 }
 
 static void a2dp_resume_complete(struct avdtp *session,

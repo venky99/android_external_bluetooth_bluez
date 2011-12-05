@@ -185,6 +185,27 @@ static void bluetooth_close(struct bluetooth_data *data)
 {
 	DBG("bluetooth_close");
 	if (data->server.fd >= 0) {
+		// sending BT_CLOSE to cleanup unix socket.
+		char buf[BT_SUGGESTED_BUFFER_SIZE];
+		struct bt_close_req *close_req = (void*) buf;
+		struct bt_close_rsp *close_rsp = (void*) buf;
+		int err;
+		memset(close_req, 0, BT_SUGGESTED_BUFFER_SIZE);
+		close_req->h.type = BT_REQUEST;
+		close_req->h.name = BT_CLOSE;
+
+		close_req->h.length = sizeof(*close_req);
+
+		err = audioservice_send(data, &close_req->h);
+		if (err < 0) {
+			ERR("audioservice_send failed for BT_CLOSE_REQ\n");
+		} else {
+			close_rsp->h.length = 0;
+			err = audioservice_expect(data, &close_rsp->h, BT_CLOSE);
+			if (err < 0) {
+				ERR("audioservice_expect failed for BT_CLOSE_RSP\n");
+			}
+		}
 		bt_audio_service_close(data->server.fd);
 		data->server.fd = -1;
 	}
