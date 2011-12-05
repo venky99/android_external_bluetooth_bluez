@@ -53,6 +53,7 @@
 
 #define NETWORK_SERVER_INTERFACE "org.bluez.NetworkServer"
 #define SETUP_TIMEOUT		1
+#define BNEP_EXT_CONTROL 0
 
 /* Pending Authorization */
 struct network_session {
@@ -85,6 +86,7 @@ struct network_server {
 static DBusConnection *connection = NULL;
 static GSList *adapters = NULL;
 static gboolean security = TRUE;
+static gboolean master = FALSE;
 
 static struct network_adapter *find_adapter(GSList *list,
 					struct btd_adapter *adapter)
@@ -292,6 +294,17 @@ static ssize_t send_bnep_ctrl_rsp(int sk, uint16_t val)
 	return send(sk, &rsp, sizeof(rsp), 0);
 }
 
+static ssize_t send_bnep_ext_ctrl_rsp(int sk, int ctrl, uint16_t val)
+{
+	struct bnep_control_rsp rsp;
+
+	rsp.type = BNEP_CONTROL;
+	rsp.ctrl = ctrl;
+	rsp.resp = htons(val);
+
+	return send(sk, &rsp, sizeof(rsp), 0);
+}
+
 static void session_free(void *data)
 {
 	struct network_session *session = data;
@@ -437,6 +450,36 @@ static void setup_destroy(void *user_data)
 	session_free(setup);
 }
 
+static void parse_extension_data(int sk, void *ext)
+{
+	struct bnep_ext_hdr *h;
+	int ext_ctrl_type =0;
+	do {
+		h = (void *) ext;
+		if(h == NULL)
+			break;
+		DBG("type 0x%x len %d", h->type, h->len);
+
+		switch (h->type & BNEP_TYPE_MASK) {
+		case BNEP_EXT_CONTROL:
+			ext_ctrl_type = h->data[0];
+			DBG("ctrl type is %d", ext_ctrl_type);
+			if(ext_ctrl_type == BNEP_FILTER_NET_TYPE_SET) {
+			    send_bnep_ext_ctrl_rsp(sk, BNEP_FILTER_NET_TYPE_RSP,
+							BNEP_FILTER_UNSUPPORTED_REQ);
+			} else if(ext_ctrl_type == BNEP_FILTER_MULT_ADDR_SET) {
+			    send_bnep_ext_ctrl_rsp(sk, BNEP_FILTER_MULT_ADDR_RSP,
+							BNEP_FILTER_UNSUPPORTED_REQ);
+			}
+			break;
+		default:
+			/* Unknown extension, skip it. */
+			break;
+		}
+		ext = h->data + h->len;
+	} while (h->type & BNEP_EXT_HEADER);
+ }
+
 static gboolean bnep_setup(GIOChannel *chan,
 			GIOCondition cond, gpointer user_data)
 {
@@ -446,7 +489,9 @@ static gboolean bnep_setup(GIOChannel *chan,
 	struct bnep_setup_conn_req *req = (void *) packet;
 	uint16_t src_role, dst_role, rsp = BNEP_CONN_NOT_ALLOWED;
 	int n, sk;
+	void *ext = NULL;
 
+	DBG("enter bnep_setup");
 	if (cond & G_IO_NVAL)
 		return FALSE;
 
@@ -479,8 +524,10 @@ static gboolean bnep_setup(GIOChannel *chan,
 		return FALSE;
 	}
 
-	if (req->type != BNEP_CONTROL || req->ctrl != BNEP_SETUP_CONN_REQ)
+	if ((req->type & BNEP_TYPE_MASK) != BNEP_CONTROL || 
+			req->ctrl != BNEP_SETUP_CONN_REQ) {
 		return FALSE;
+	}
 
 	rsp = bnep_setup_decode(req, &dst_role, &src_role);
 	if (rsp)
@@ -515,7 +562,11 @@ static gboolean bnep_setup(GIOChannel *chan,
 
 reply:
 	send_bnep_ctrl_rsp(sk, rsp);
-
+	if (req->type & BNEP_EXT_HEADER) {
+		// parse extension packets and send rsp as unsupported req (0x1).
+		ext = req->service + 4;// as size of data is 4 bytes
+		parse_extension_data(sk, ext);
+	}
 	return FALSE;
 }
 
@@ -616,9 +667,10 @@ drop:
 	g_io_channel_shutdown(chan, TRUE, NULL);
 }
 
-int server_init(DBusConnection *conn, gboolean secure)
+int server_init(DBusConnection *conn, gboolean secure, gboolean master_role)
 {
 	security = secure;
+	master = master_role;
 	connection = dbus_connection_ref(conn);
 
 	return 0;
@@ -834,6 +886,7 @@ static struct network_adapter *create_adapter(struct btd_adapter *adapter)
 
 	adapter_get_address(adapter, &src);
 
+	DBG("BNEP: master option for NAP device %d", master);
 	na->io = bt_io_listen(BT_IO_L2CAP, NULL, confirm_event, na,
 				NULL, &err,
 				BT_IO_OPT_SOURCE_BDADDR, &src,
@@ -842,6 +895,7 @@ static struct network_adapter *create_adapter(struct btd_adapter *adapter)
 				BT_IO_OPT_IMTU, BNEP_MTU,
 				BT_IO_OPT_SEC_LEVEL,
 				security ? BT_IO_SEC_MEDIUM : BT_IO_SEC_LOW,
+				BT_IO_OPT_MASTER, master,
 				BT_IO_OPT_INVALID);
 	if (!na->io) {
 		error("%s", err->message);

@@ -49,6 +49,7 @@
 #include "connection.h"
 
 #define NETWORK_PEER_INTERFACE "org.bluez.Network"
+#define DISCONNECT_TIMEOUT 30
 
 typedef enum {
 	CONNECTED,
@@ -73,6 +74,7 @@ struct network_conn {
 	guint		watch;		/* Disconnect watch */
 	guint		dc_id;
 	struct network_peer *peer;
+	guint		dc_timer;
 };
 
 struct __service_16 {
@@ -184,6 +186,31 @@ static void disconnect_cb(struct btd_device *device, gboolean removal,
 	connection_destroy(NULL, user_data);
 }
 
+static gboolean disconnect_timeout(struct network_conn *nc)
+{
+	if (nc->dc_timer) {
+		nc->dc_timer = 0;
+		info("Network: Connect req timedout");
+		cancel_connection(nc,"Connect req timedout");
+	}
+	return FALSE;
+}
+
+static void remove_disconnect_timer(struct network_conn *nc)
+{
+	g_source_remove(nc->dc_timer);
+	nc->dc_timer = 0;
+}
+
+static void set_disconnect_timer(struct network_conn *nc)
+{
+	if (nc->dc_timer)
+		remove_disconnect_timer(nc);
+	nc->dc_timer = g_timeout_add_seconds(DISCONNECT_TIMEOUT,
+						disconnect_timeout,
+						nc);
+}
+
 static gboolean bnep_setup_cb(GIOChannel *chan, GIOCondition cond,
 							gpointer data)
 {
@@ -195,6 +222,10 @@ static gboolean bnep_setup_cb(GIOChannel *chan, GIOCondition cond,
 	int sk;
 	const char *pdev, *uuid;
 	gboolean connected;
+
+	// remove the disconnect_timer first
+	if(nc->dc_timer)
+		remove_disconnect_timer(nc);
 
 	if (cond & G_IO_NVAL)
 		return FALSE;
@@ -317,6 +348,8 @@ static int bnep_connect(struct network_conn *nc)
 
 	g_io_add_watch(nc->io, G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL,
 			(GIOFunc) bnep_setup_cb, nc);
+	if (nc->io)
+		set_disconnect_timer(nc);
 
 	return 0;
 }
@@ -481,6 +514,8 @@ static void connection_free(struct network_conn *nc)
 {
 	if (nc->dc_id)
 		device_remove_disconnect_watch(nc->peer->device, nc->dc_id);
+	if (nc->dc_timer)
+		remove_disconnect_timer(nc);
 
 	connection_destroy(connection, nc);
 
