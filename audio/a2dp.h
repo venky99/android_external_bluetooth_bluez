@@ -162,3 +162,4 @@ gboolean a2dp_sep_get_lock(struct a2dp_sep *sep);
 struct avdtp_stream *a2dp_sep_get_stream(struct a2dp_sep *sep);
 struct a2dp_sep *a2dp_get_sep(struct avdtp *session,
 				struct avdtp_stream *stream);
+gboolean a2dp_is_reconfig(struct avdtp *session);

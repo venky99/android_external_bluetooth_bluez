@@ -88,6 +88,7 @@ static char *str_state[] = {
 	"SINK_STATE_CONNECTING",
 	"SINK_STATE_CONNECTED",
 	"SINK_STATE_PLAYING",
+	"SINK_STATE_DISCONNECTING"
 };
 
 static const char *state2str(sink_state_t state)
@@ -101,6 +102,8 @@ static const char *state2str(sink_state_t state)
 		return "connected";
 	case SINK_STATE_PLAYING:
 		return "playing";
+	case SINK_STATE_DISCONNECTING:
+		return "disconnecting";
 	default:
 		error("Invalid sink state %d", state);
 		return NULL;
@@ -257,8 +260,22 @@ static void stream_state_changed(struct avdtp_stream *stream,
 					DBUS_TYPE_BOOLEAN, &value);
 		sink_set_state(dev, SINK_STATE_PLAYING);
 		break;
-	case AVDTP_STATE_CONFIGURED:
 	case AVDTP_STATE_CLOSING:
+		if (old_state == AVDTP_STATE_STREAMING) {
+			value = FALSE;
+			g_dbus_emit_signal(dev->conn, dev->path,
+						AUDIO_SINK_INTERFACE,
+						"Stopped",
+						DBUS_TYPE_INVALID);
+			emit_property_changed(dev->conn, dev->path,
+						AUDIO_SINK_INTERFACE,
+						"Playing",
+						DBUS_TYPE_BOOLEAN, &value);
+		}
+		if (!a2dp_is_reconfig(sink->session))
+			sink_set_state(dev, SINK_STATE_DISCONNECTING);
+		break;
+	case AVDTP_STATE_CONFIGURED:
 	case AVDTP_STATE_ABORTING:
 	default:
 		break;
