@@ -1170,6 +1170,9 @@ static struct btd_device *adapter_create_device(DBusConnection *conn,
 {
 	struct btd_device *device;
 	const char *path;
+	bdaddr_t remote;
+	uint32_t class = 0;
+	char *iconstr = NULL;
 
 	DBG("%s", address);
 
@@ -1177,7 +1180,18 @@ static struct btd_device *adapter_create_device(DBusConnection *conn,
 	if (!device)
 		return NULL;
 
-	device_set_temporary(device, TRUE);
+
+	str2ba(address, &remote);
+	read_remote_class(&adapter->bdaddr, &remote, &class);
+	DBG("Modified Remote class is %d", class);
+	// If it is HID Mouse, create it as a permanent device since pairing is not required
+	// for HID pointing devices.
+	iconstr = class_to_icon(class);
+	if ((NULL != iconstr) &&
+		(0 == strcmp("input-mouse", iconstr)))
+		device_set_temporary(device, FALSE);
+	else
+		device_set_temporary(device, TRUE);
 
 	adapter->devices = g_slist_append(adapter->devices, device);
 
@@ -2741,7 +2755,7 @@ static DBusMessage *remove_reserved_service_records(DBusConnection *conn,
 							DBusMessage *msg, void *data) {
 	uint32_t *handles;
 	uint32_t len, i;
-	
+
 	if (dbus_message_get_args(msg, NULL, DBUS_TYPE_ARRAY, DBUS_TYPE_UINT32,
 				&handles, &len, DBUS_TYPE_INVALID) == FALSE)
 		return btd_error_invalid_args(msg);
