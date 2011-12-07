@@ -2738,6 +2738,7 @@ static gboolean avdtp_discover_resp(struct avdtp *session,
 {
 	int sep_count, i;
 	uint8_t getcap_cmd;
+	gboolean stream_found;
 
 	if (session->version >= 0x0103 && session->server->version >= 0x0103)
 		getcap_cmd = AVDTP_GET_ALL_CAPABILITIES;
@@ -2745,6 +2746,7 @@ static gboolean avdtp_discover_resp(struct avdtp *session,
 		getcap_cmd = AVDTP_GET_CAPABILITIES;
 
 	sep_count = size / sizeof(struct seid_info);
+	stream_found = FALSE;
 
 	for (i = 0; i < sep_count; i++) {
 		struct avdtp_remote_sep *sep;
@@ -2758,10 +2760,13 @@ static gboolean avdtp_discover_resp(struct avdtp *session,
 
 		stream = find_stream_by_rseid(session, resp->seps[i].seid);
 
+		if (stream)
+			stream_found = TRUE;
+
 		sep = find_remote_sep(session->seps, resp->seps[i].seid);
 		if (!sep) {
 			if (resp->seps[i].inuse && !stream) {
-				if ((i + 1) == sep_count) {
+				if (((i + 1) == sep_count) && !stream_found) {
 					finalize_discovery(session, -EINPROGRESS);
 					return TRUE;
 				}
