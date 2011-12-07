@@ -781,13 +781,15 @@ static void channel_disconnect(void *user_data)
 {
 	struct gatt_channel *channel = user_data;
 
-	g_attrib_unref(channel->attrib);
 	clients = g_slist_remove(clients, channel);
 
 	g_slist_free(channel->notify);
 	g_slist_free(channel->indicate);
 	g_slist_foreach(channel->configs, (GFunc) g_free, NULL);
 	g_slist_free(channel->configs);
+	g_attrib_set_disconnect_server_function(channel->attrib, NULL, NULL);
+	g_attrib_unref(channel->attrib);
+
 
 	g_free(channel);
 }
@@ -930,7 +932,7 @@ void attrib_server_attach(struct _GAttrib *attrib, bdaddr_t *src, bdaddr_t *dst,
 		channel->le = FALSE;
 
 	channel->mtu = mtu;
-	channel->attrib = attrib;
+	channel->attrib = g_attrib_ref(attrib);
 	channel->src = *src;
 	channel->dst = *dst;
 
