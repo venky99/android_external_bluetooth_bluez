@@ -814,7 +814,8 @@ static gboolean control_cb(GIOChannel *chan, GIOCondition cond,
 				g_free(mdata->remaining_mdata);
 				mdata->remaining_mdata = NULL;
 				avctp->cr = AVCTP_RESPONSE;
-				avrcp->code = CTYPE_STABLE;
+				avrcp->code = CTYPE_ACCEPTED;
+				packet_size -= 1;
 			}
 		} else if (params->pdu_id == PDU_RGR_NOTIFICATION_ID) {
 			avctp->cr = AVCTP_RESPONSE;
