@@ -2360,7 +2360,11 @@ static int add_headset_ag_record(struct btd_adapter* adapter)
 	sdp_set_service_classes(record, svclass_id);
 
 	sdp_uuid16_create(&profile.uuid, HEADSET_PROFILE_ID);
+#ifdef ANDROID
+	profile.version = 0x0102;
+#else
 	profile.version = 0x0100;
+#endif
 	pfseq = sdp_list_append(0, &profile);
 	sdp_set_profile_descs(record, pfseq);
 
