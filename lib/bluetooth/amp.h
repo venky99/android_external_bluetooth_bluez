@@ -22,109 +22,119 @@
 extern "C" {
 #endif
 
-#define AMP_MGR_CID 0x03
+/* A2MP Protocol */
 
-/* AMP manager codes */
-#define AMP_COMMAND_REJ		0x01
-#define AMP_DISCOVER_REQ	0x02
-#define AMP_DISCOVER_RSP	0x03
-#define AMP_CHANGE_NOTIFY	0x04
-#define AMP_CHANGE_RSP		0x05
-#define AMP_INFO_REQ		0x06
-#define AMP_INFO_RSP		0x07
-#define AMP_ASSOC_REQ		0x08
-#define AMP_ASSOC_RSP		0x09
-#define AMP_LINK_REQ		0x0a
-#define AMP_LINK_RSP		0x0b
-#define AMP_DISCONN_REQ		0x0c
-#define AMP_DISCONN_RSP		0x0d
+/* A2MP command codes */
 
-typedef struct {
+#define A2MP_COMMAND_REJ	0x01
+#define A2MP_DISCOVER_REQ	0x02
+#define A2MP_DISCOVER_RSP	0x03
+#define A2MP_CHANGE_NOTIFY	0x04
+#define A2MP_CHANGE_RSP		0x05
+#define A2MP_INFO_REQ		0x06
+#define A2MP_INFO_RSP		0x07
+#define A2MP_ASSOC_REQ		0x08
+#define A2MP_ASSOC_RSP		0x09
+#define A2MP_CREATE_REQ		0x0a
+#define A2MP_CREATE_RSP		0x0b
+#define A2MP_DISCONN_REQ	0x0c
+#define A2MP_DISCONN_RSP	0x0d
+
+struct a2mp_hdr {
 	uint8_t		code;
 	uint8_t		ident;
 	uint16_t	len;
-} __attribute__ ((packed)) amp_mgr_hdr;
-#define AMP_MGR_HDR_SIZE 4
+} __attribute__ ((packed));
+#define A2MP_HDR_SIZE 4
 
-/* AMP ASSOC structure */
-typedef struct {
-	uint8_t		type_id;
-	uint16_t	len;
-	uint8_t		data[0];
-} __attribute__ ((packed)) amp_assoc_tlv;
-
-typedef struct {
+struct a2mp_command_rej {
 	uint16_t	reason;
-} __attribute__ ((packed)) amp_cmd_rej_parms;
+} __attribute__ ((packed));
 
-typedef struct {
+struct a2mp_discover_req {
 	uint16_t	mtu;
 	uint16_t	mask;
-} __attribute__ ((packed)) amp_discover_req_parms;
+} __attribute__ ((packed));
 
-typedef struct {
-	uint16_t	mtu;
-	uint16_t	mask;
-	uint8_t		controller_list[0];
-} __attribute__ ((packed)) amp_discover_rsp_parms;
-
-typedef struct {
+struct a2mp_ctrl {
 	uint8_t		id;
-} __attribute__ ((packed)) amp_info_req_parms;
+	uint8_t		type;
+	uint8_t		status;
+} __attribute__ ((packed));
 
-typedef struct {
+struct a2mp_discover_rsp {
+	uint16_t	mtu;
+	uint16_t	mask;
+	struct a2mp_ctrl ctrl_list[0];
+} __attribute__ ((packed));
+
+struct a2mp_info_req {
+	uint8_t		id;
+} __attribute__ ((packed));
+
+struct a2mp_info_rsp {
 	uint8_t		id;
 	uint8_t		status;
-	uint32_t	total_bandwidth;
-	uint32_t	max_bandwidth;
+	uint32_t	total_bw;
+	uint32_t	max_bw;
 	uint32_t	min_latency;
 	uint16_t	pal_caps;
 	uint16_t	assoc_size;
-} __attribute__ ((packed)) amp_info_rsp_parms;
+} __attribute__ ((packed));
 
-typedef struct {
+struct a2mp_assoc_req {
+	uint8_t		id;
+} __attribute__ ((packed));
+
+struct a2mp_assoc_rsp {
 	uint8_t		id;
 	uint8_t		status;
-	amp_assoc_tlv	assoc;
-} __attribute__ ((packed)) amp_assoc_rsp_parms;
+	uint8_t		assoc_data[0];
+} __attribute__ ((packed));
 
-typedef struct {
+struct a2mp_create_req {
 	uint8_t		local_id;
 	uint8_t		remote_id;
-	amp_assoc_tlv	assoc;
-} __attribute__ ((packed)) amp_link_req_parms;
+	uint8_t		assoc_data[0];
+} __attribute__ ((packed));
 
-typedef struct {
+struct a2mp_create_rsp {
 	uint8_t		local_id;
 	uint8_t		remote_id;
 	uint8_t		status;
-} __attribute__ ((packed)) amp_link_rsp_parms;
+} __attribute__ ((packed));
 
-typedef struct {
+struct a2mp_disconn_req {
 	uint8_t		local_id;
 	uint8_t		remote_id;
-} __attribute__ ((packed)) amp_disconn_req_parms;
+} __attribute__ ((packed));
 
-#define AMP_COMMAND_NOT_RECOGNIZED 0x0000
+struct a2mp_disconn_rsp {
+	uint8_t		local_id;
+	uint8_t		remote_id;
+	uint8_t		status;
+} __attribute__ ((packed));
+
+#define A2MP_COMMAND_NOT_RECOGNIZED 0x0000
 
 /* AMP controller status */
-#define AMP_CT_POWERED_DOWN		0x00
-#define AMP_CT_BLUETOOTH_ONLY		0x01
-#define AMP_CT_NO_CAPACITY		0x02
-#define AMP_CT_LOW_CAPACITY		0x03
-#define AMP_CT_MEDIUM_CAPACITY		0x04
-#define AMP_CT_HIGH_CAPACITY		0x05
-#define AMP_CT_FULL_CAPACITY		0x06
+#define AMP_CTRL_POWERED_DOWN		0x00
+#define AMP_CTRL_BLUETOOTH_ONLY		0x01
+#define AMP_CTRL_NO_CAPACITY		0x02
+#define AMP_CTRL_LOW_CAPACITY		0x03
+#define AMP_CTRL_MEDIUM_CAPACITY	0x04
+#define AMP_CTRL_HIGH_CAPACITY		0x05
+#define AMP_CTRL_FULL_CAPACITY		0x06
 
-/* AMP response status */
-#define AMP_STATUS_SUCCESS				0x00
-#define AMP_STATUS_INVALID_CTRL_ID			0x01
-#define AMP_STATUS_UNABLE_START_LINK_CREATION		0x02
-#define AMP_STATUS_NO_PHYSICAL_LINK_EXISTS		0x02
-#define AMP_STATUS_COLLISION_OCCURED			0x03
-#define AMP_STATUS_DISCONN_REQ_RECVD			0x04
-#define AMP_STATUS_PHYS_LINK_EXISTS			0x05
-#define AMP_STATUS_SECURITY_VIOLATION			0x06
+/* A2MP response status */
+#define A2MP_STATUS_SUCCESS				0x00
+#define A2MP_STATUS_INVALID_CTRL_ID			0x01
+#define A2MP_STATUS_UNABLE_START_LINK_CREATION		0x02
+#define A2MP_STATUS_NO_PHYSICAL_LINK_EXISTS		0x02
+#define A2MP_STATUS_COLLISION_OCCURED			0x03
+#define A2MP_STATUS_DISCONN_REQ_RECVD			0x04
+#define A2MP_STATUS_PHYS_LINK_EXISTS			0x05
+#define A2MP_STATUS_SECURITY_VIOLATION			0x06
 
 #ifdef __cplusplus
 }
