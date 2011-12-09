@@ -402,6 +402,8 @@ static void attrib_disconnect(gpointer user_data)
 
 	g_slist_foreach(gatt->primary, stop_discovery, NULL);
 
+	g_attrib_set_disconnect_function(gatt->attrib, NULL, NULL);
+
 	/* Remote initiated disconnection only */
 	g_attrib_unref(gatt->attrib);
 }
