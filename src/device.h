@@ -128,3 +128,6 @@ void btd_unregister_device_driver(struct btd_device_driver *driver);
 
 struct btd_device *btd_device_ref(struct btd_device *device);
 void btd_device_unref(struct btd_device *device);
+void open_sdp_channel(struct btd_device *device);
+void close_sdp_channel(struct btd_device *device);
+gboolean isSdpRequired(bdaddr_t dest);
