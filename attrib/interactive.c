@@ -136,6 +136,8 @@ done:
 
 static void connect_cb(GIOChannel *io, GError *err, gpointer user_data)
 {
+	bdaddr_t sba, dba;
+
 	if (err) {
 		printf("connect error: %s\n", err->message);
 		set_state(STATE_DISCONNECTED);
@@ -147,6 +149,14 @@ static void connect_cb(GIOChannel *io, GError *err, gpointer user_data)
 							attrib, NULL);
 	g_attrib_register(attrib, ATT_OP_HANDLE_IND, events_handler,
 							attrib, NULL);
+
+	/* LE connections share Client and Server paths */
+	if (!opt_psm) {
+		str2ba(opt_dst, &dba);
+		str2ba(opt_src, &sba);
+		attrib_server_attach(attrib, &sba, &dba, ATT_DEFAULT_LE_MTU);
+	}
+
 	set_state(STATE_CONNECTED);
 }
 

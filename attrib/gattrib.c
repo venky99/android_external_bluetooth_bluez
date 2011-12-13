@@ -278,11 +278,11 @@ static gboolean can_write_data(GIOChannel *io, GIOCondition cond,
 	GIOStatus iostat;
 
 	if (cond & (G_IO_HUP | G_IO_ERR | G_IO_NVAL)) {
-		if (attrib->disconnect)
-			attrib->disconnect(attrib->disc_user_data);
-
 		if (attrib->disconnect_server)
 			attrib->disconnect_server(attrib->disc_server_data);
+
+		if (attrib->disconnect)
+			attrib->disconnect(attrib->disc_user_data);
 
 		return FALSE;
 	}
@@ -341,11 +341,11 @@ static gboolean received_data(GIOChannel *io, GIOCondition cond, gpointer data)
 
 	if (cond & (G_IO_HUP | G_IO_ERR | G_IO_NVAL)) {
 		attrib->read_watch = 0;
-		if (attrib->disconnect)
-			attrib->disconnect(attrib->disc_user_data);
-
 		if (attrib->disconnect_server)
 			attrib->disconnect_server(attrib->disc_server_data);
+
+		if (attrib->disconnect)
+			attrib->disconnect(attrib->disc_user_data);
 
 		return FALSE;
 	}
@@ -474,8 +474,6 @@ GAttrib *g_attrib_new(GIOChannel *io)
 
 	attrib->buf = g_malloc0(omtu);
 	attrib->buflen = omtu;
-
-	attrib_server_attach(attrib, &src, &dst, omtu);
 
 	return g_attrib_ref(attrib);
 }

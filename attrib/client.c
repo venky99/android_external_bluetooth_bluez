@@ -426,6 +426,11 @@ static void connect_cb(GIOChannel *chan, GError *gerr, gpointer user_data)
 	if (gatt->attrib == NULL)
 		return;
 
+	/* LE connections share Client and Server paths */
+	if (gatt->psm < 0)
+		attrib_server_attach(gatt->attrib, &gatt->sba, &gatt->dba,
+							ATT_DEFAULT_LE_MTU);
+
 	/* Listen mode: used for notification and indication */
 	if (gatt->listen == TRUE) {
 		g_attrib_register(gatt->attrib,
@@ -831,7 +836,7 @@ static DBusMessage *set_cli_conf(DBusConnection *conn, DBusMessage *msg,
 	gatt_write_char(gatt->attrib, chr->desc.cli_conf_hndl, value, len,
 					gatt_write_cli_conf_resp, qvalue);
 
-  return NULL;
+	return NULL;
 }
 
 static DBusMessage *get_properties(DBusConnection *conn, DBusMessage *msg,
@@ -1509,6 +1514,8 @@ GSList *attrib_client_register(DBusConnection *connection,
 	const char *path = device_get_path(device);
 	struct gatt_service *gatt;
 	bdaddr_t sba, dba;
+
+	DBG("Register Client");
 
 	adapter_get_address(adapter, &sba);
 	device_get_address(device, &dba);
