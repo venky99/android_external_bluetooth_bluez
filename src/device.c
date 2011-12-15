@@ -1046,9 +1046,6 @@ void device_remove_connection(struct btd_device *device, DBusConnection *conn)
 		device->disconnects = g_slist_remove(device->disconnects, msg);
 	}
 
-	if (device_is_paired(device) && !device->bonded)
-		device_set_paired(device, FALSE);
-
 	emit_property_changed(conn, device->path,
 					DEVICE_INTERFACE, "Connected",
 					DBUS_TYPE_BOOLEAN, &device->connected);
@@ -1294,8 +1291,10 @@ static void device_remove_stored(struct btd_device *device)
 	ba2str(&device->bdaddr, addr);
 	sprintf(hash,"%8.8X", device->hash);
 
-	if (device->paired)
+	if (device->paired) {
 		device_remove_bonding(device);
+		device_set_paired(device, FALSE);
+	}
 	delete_entry(&src, "profiles", addr);
 	delete_entry(&src, "trusts", addr);
 	delete_entry(&src, "types", addr);
