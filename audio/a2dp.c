@@ -2317,7 +2317,6 @@ gboolean a2dp_sep_unlock(struct a2dp_sep *sep, struct avdtp *session)
 	avdtp_state_t state;
 	GSList *l;
 
-	state = avdtp_sep_get_state(sep->lsep);
 
 	sep->locked = FALSE;
 
@@ -2328,11 +2327,19 @@ gboolean a2dp_sep_unlock(struct a2dp_sep *sep, struct avdtp *session)
 	else
 		l = server->sinks;
 
+	if (l == NULL) {
+		return TRUE;
+	}
 	/* Unregister sep if it was removed */
 	if (g_slist_find(l, sep) == NULL) {
 		a2dp_unregister_sep(sep);
 		return TRUE;
 	}
+
+	if (sep->lsep == NULL) {
+		return TRUE;
+	}
+	state = avdtp_sep_get_state(sep->lsep);
 
 	if (!sep->stream || state == AVDTP_STATE_IDLE)
 		return TRUE;
