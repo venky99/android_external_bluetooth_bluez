@@ -586,13 +586,6 @@ static DBusMessage *register_watcher(DBusConnection *conn,
 		return reply;
 	}
 
-	g_attrib_register(prim->gatt->attrib,
-					ATT_OP_HANDLE_NOTIFY,
-					events_handler, prim->gatt, NULL);
-	g_attrib_register(prim->gatt->attrib,
-					ATT_OP_HANDLE_IND,
-					events_handler, prim->gatt, NULL);
-
 	watcher = g_new0(struct watcher, 1);
 	watcher->name = g_strdup(sender);
 	watcher->prim = prim;
