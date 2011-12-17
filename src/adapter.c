@@ -4021,12 +4021,7 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 	dev_type = device_type2text(type);
 
 	if (dev->le) {
-		gboolean broadcaster;
-
-		if (dev->flags & (EIR_LIM_DISC | EIR_GEN_DISC))
-			broadcaster = FALSE;
-		else
-			broadcaster = TRUE;
+		gboolean broadcaster = TRUE;
 
 		/* Don't emit LE result if this is a Dual mode device */
 		if (dev->flags != -1) {
@@ -4037,6 +4032,9 @@ void adapter_emit_device_found(struct btd_adapter *adapter,
 							DEVICE_TYPE_DUALMODE);
 				return;
 			}
+
+			if (dev->flags & (EIR_LIM_DISC | EIR_GEN_DISC))
+				broadcaster = FALSE;
 		}
 
 		emit_device_found(adapter->path, paddr,
