@@ -2084,6 +2084,7 @@ int device_browse_primary(struct btd_device *device, DBusConnection *conn,
 	BtIOSecLevel sec_level;
 	GIOChannel *io;
 	bdaddr_t src;
+	GAttrib *attrib;
 
 	DBG("");
 
@@ -2092,6 +2093,13 @@ int device_browse_primary(struct btd_device *device, DBusConnection *conn,
 
 	req = g_new0(struct browse_req, 1);
 	req->device = btd_device_ref(device);
+
+	attrib  = attrib_client_find (device);
+	if (attrib) {
+		gatt_discover_primary(attrib, NULL, primary_cb, req);
+		device->browse = req;
+		return 0;
+	}
 
 	adapter_get_address(adapter, &src);
 

@@ -27,3 +27,4 @@ GSList *attrib_client_register(DBusConnection *connection,
 					GAttrib *attrib, GSList *primaries);
 void attrib_client_unregister(struct btd_device *device);
 void attrib_client_disconnect(struct btd_device *device);
+GAttrib *attrib_client_find (struct btd_device *device);
