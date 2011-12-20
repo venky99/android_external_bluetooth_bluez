@@ -70,6 +70,17 @@
 /* When all services should trust a remote device */
 #define GLOBAL_TRUST "[all]"
 
+#define GENERIC_AUDIO_UUID	"00001203-0000-1000-8000-00805f9b34fb"
+#define HSP_HS_UUID		"00001108-0000-1000-8000-00805f9b34fb"
+#define HSP_AG_UUID		"00001112-0000-1000-8000-00805f9b34fb"
+#define HFP_HS_UUID		"0000111e-0000-1000-8000-00805f9b34fb"
+#define HFP_AG_UUID		"0000111f-0000-1000-8000-00805f9b34fb"
+#define ADVANCED_AUDIO_UUID	"0000110d-0000-1000-8000-00805f9b34fb"
+#define A2DP_SOURCE_UUID	"0000110a-0000-1000-8000-00805f9b34fb"
+#define A2DP_SINK_UUID		"0000110b-0000-1000-8000-00805f9b34fb"
+#define AVRCP_REMOTE_UUID	"0000110e-0000-1000-8000-00805f9b34fb"
+#define AVRCP_TARGET_UUID	"0000110c-0000-1000-8000-00805f9b34fb"
+
 struct sdp_timeout_data {
 	struct btd_adapter *adapter;
 	bdaddr_t	dst;
@@ -1386,6 +1397,50 @@ static gboolean record_has_uuid(const sdp_record_t *rec,
 	return FALSE;
 }
 
+static gboolean is_audio_driver(char *dest_uuid)
+{
+	char  **uuids =  BTD_UUIDS(HSP_HS_UUID, HFP_HS_UUID, HSP_AG_UUID, HFP_AG_UUID,
+					ADVANCED_AUDIO_UUID, A2DP_SOURCE_UUID, A2DP_SINK_UUID,
+					AVRCP_TARGET_UUID, AVRCP_REMOTE_UUID);
+	char **uuid;
+
+	for (uuid = uuids; *uuid; uuid++) {
+		if (strcasecmp(*uuid,dest_uuid) == 0)
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static gboolean all_audio_drivers_removed(GSList *device_uuids,
+						GSList *removed_uuids)
+{
+	GSList *audio_device_uuids = NULL , *l;
+
+	char *uuid =NULL;
+	int len = g_slist_length(device_uuids);
+	int removed_audio_uuids = 0, i;
+
+	for (i = 0, l = device_uuids; l; l = l->next, i++) {
+		uuid = l->data;
+		if (is_audio_driver(uuid)) {
+			audio_device_uuids = g_slist_append(audio_device_uuids, uuid);
+		}
+	}
+	len = g_slist_length(audio_device_uuids);
+
+	for (i = 0, l = audio_device_uuids; l; l = l->next, i++) {
+		uuid = l->data;
+		if (g_slist_find_custom(removed_uuids, uuid,
+						(GCompareFunc) strcasecmp)){
+			removed_audio_uuids++;
+		}
+	}
+
+	if (len == removed_audio_uuids)
+		return TRUE;
+	return FALSE;
+}
+
 static GSList *device_match_pattern(struct btd_device *device,
 					const char *match_uuid,
 					GSList *profiles)
@@ -1517,9 +1572,13 @@ static void device_remove_drivers(struct btd_device *device, GSList *uuids)
 			DBG("UUID %s was removed from device %s",
 							*uuid, dstaddr);
 
-			driver->remove(device);
-			device->drivers = g_slist_remove(device->drivers,
+			if (!is_audio_driver(*uuid) ||
+				(is_audio_driver(*uuid) &&
+				 all_audio_drivers_removed(device->uuids,uuids))) {
+				driver->remove(device);
+				device->drivers = g_slist_remove(device->drivers,
 								driver);
+			}
 			break;
 		}
 	}
