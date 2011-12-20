@@ -345,3 +345,8 @@ struct mgmt_ev_encrypt_change {
 	uint8_t status;
 } __packed;
 
+#define MGMT_EV_REMOTE_CLASS		0x0017
+struct mgmt_ev_remote_class {
+	bdaddr_t bdaddr;
+	uint8_t dev_class[3];
+} __packed;

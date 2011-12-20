@@ -1592,6 +1592,34 @@ static void mgmt_discovering(int sk, uint16_t index, void *buf, size_t len)
 		adapter_set_state(adapter, STATE_IDLE);
 }
 
+static void mgmt_remote_class(int sk, uint16_t index, void *buf, size_t len)
+{
+	struct mgmt_ev_remote_class *ev = buf;
+	struct controller_info *info;
+	char addr[18];
+	uint32_t class;
+
+	if (len < sizeof(*ev)) {
+		error("Too small mgmt_remote_class packet");
+		return;
+	}
+
+	if (index > max_index) {
+		error("Unexpected index %u in remote_class event", index);
+		return;
+	}
+
+	info = &controllers[index];
+
+	ba2str(&ev->bdaddr, addr);
+	class = ev->dev_class[0] | (ev->dev_class[1] << 8)
+						| (ev->dev_class[2] << 16);
+
+	DBG("hci%u addr %s, class %x", index, addr, class);
+
+	btd_event_remote_class(&info->bdaddr, &ev->bdaddr, class);
+}
+
 static gboolean mgmt_event(GIOChannel *io, GIOCondition cond, gpointer user_data)
 {
 	char buf[MGMT_BUF_SIZE];
@@ -1703,6 +1731,9 @@ static gboolean mgmt_event(GIOChannel *io, GIOCondition cond, gpointer user_data
 		break;
 	case MGMT_EV_ENCRYPT_CHANGE:
 		mgmt_encrypt_change_event(sk, index, buf + MGMT_HDR_SIZE, len);
+		break;
+	case MGMT_EV_REMOTE_CLASS:
+		mgmt_remote_class(sk, index, buf + MGMT_HDR_SIZE, len);
 		break;
 	default:
 		error("Unknown Management opcode %u (index %u)", opcode, index);
