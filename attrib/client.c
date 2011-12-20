@@ -171,14 +171,30 @@ static void gatt_service_free(void *user_data)
 	g_free(gatt);
 }
 
-static void characteristics_clean_dbus_msg(gpointer user_data) {
+static void characteristic_clean(gpointer user_data, gpointer extra_data)
+{
 	struct characteristic *chr = user_data;
-	chr->msg = NULL;
+	gboolean on_destroy = *(gboolean *)extra_data;
+
+	if (chr->msg) {
+		DBusMessage *reply;
+
+		DBG("");
+
+		reply = btd_error_failed(chr->msg,
+			"Not connected");
+		g_dbus_send_message(chr->prim->gatt->conn, reply);
+		chr->msg = NULL;
+        if (!on_destroy)
+            g_attrib_unref(chr->prim->gatt->attrib);
+	}
 }
 
-static void primary_clean(gpointer user_data) {
+static void primary_clean(gpointer user_data, gpointer extra_data)
+{
 	struct primary *prim = user_data;
-	g_slist_foreach(prim->chars, (GFunc) characteristics_clean_dbus_msg, NULL);
+
+	g_slist_foreach(prim->chars, characteristic_clean, extra_data);
 	prim->discovery_msg = NULL;
 	prim->connected = FALSE;
 }
@@ -354,20 +370,39 @@ static void events_handler(const uint8_t *pdu, uint16_t len,
 	}
 }
 
+static void primary_attrib_destroy(gpointer user_data)
+{
+	struct primary *prim = user_data;
+	gboolean on_destroy = TRUE;
+
+	g_slist_foreach(prim->chars, characteristic_clean, &on_destroy);
+	prim->connected = FALSE;
+
+	if (prim->discovery_msg) {
+		DBusMessage *reply;
+
+		reply = btd_error_failed(prim->discovery_msg, "Not connected");
+		g_dbus_send_message(prim->gatt->conn, reply);
+		prim->discovery_msg = NULL;
+	}
+}
+
 static void attrib_destroy(gpointer user_data)
 {
 	struct gatt_service *gatt = user_data;
 
+	DBG("");
+
+	g_slist_foreach(gatt->primary, (GFunc) primary_attrib_destroy, NULL);
+
 	gatt->attrib = NULL;
 }
 
-static void stop_discovery(gpointer user_data, gpointer extra_data) {
-
+static void stop_discovery(gpointer user_data, gpointer extra_data)
+{
 	struct primary *prim = (struct primary *) user_data;
 	struct gatt_service *gatt = prim->gatt;
 	DBusMessage *reply;
-
-	DBG("");
 
 	prim->discovery_timer = 0;
 
@@ -393,6 +428,7 @@ static gboolean stop_discovery_timeout(gpointer user_data) {
 static void attrib_disconnect(gpointer user_data)
 {
 	struct gatt_service *gatt = user_data;
+	gboolean on_destroy = FALSE;
 	GSList *l;
 
 	DBG("");
@@ -403,6 +439,8 @@ static void attrib_disconnect(gpointer user_data)
 	g_slist_foreach(gatt->primary, stop_discovery, NULL);
 
 	g_attrib_set_disconnect_function(gatt->attrib, NULL, NULL);
+
+	g_slist_foreach(gatt->primary, primary_clean, &on_destroy);
 
 	/* Remote initiated disconnection only */
 	g_attrib_unref(gatt->attrib);
@@ -1428,8 +1466,9 @@ static DBusMessage *disconnect_service(DBusConnection *conn, DBusMessage *msg,
 	GSList *lprim;
 	struct gatt_service *gatt = prim->gatt;
 	GError *gerr = NULL;
+	gboolean on_destroy = FALSE;
 
-	DBG("");
+	DBG(" %s", prim->path);
 
 	if (!prim) {
 		DBusMessage *reply = btd_error_failed(msg, gerr->message);
@@ -1437,10 +1476,8 @@ static DBusMessage *disconnect_service(DBusConnection *conn, DBusMessage *msg,
 		return reply;
 	}
 
-
-	DBG(" %s", prim->path);
 	stop_discovery(prim, NULL);
-	primary_clean(prim);
+	primary_clean(prim, &on_destroy);
 
 	for (lprim = gatt->primary, prim = NULL; lprim;
 						lprim = lprim->next) {
@@ -1572,8 +1609,6 @@ void attrib_client_disconnect(struct btd_device *device) {
 		return;
 
 	gatt = l->data;
-
-	g_slist_foreach(gatt->primary, (GFunc) primary_clean, NULL);
 
 	attrib_disconnect(gatt);
 }
