@@ -785,6 +785,17 @@ int hcid_dbus_get_oob_data(bdaddr_t *sba, bdaddr_t * dba)
 						oob_data_cb);
 }
 
+void btd_event_rssi_update(bdaddr_t *local, bdaddr_t *peer, int8_t rssi)
+{
+	struct btd_adapter *adapter;
+	struct btd_device *device;
+
+	if (!get_adapter_and_device(local, peer, &adapter, &device, TRUE))
+		return;
+
+	device_update_rssi(device, rssi);
+}
+
 void btd_event_conn_complete(bdaddr_t *local, bdaddr_t *peer, uint8_t le)
 {
 	struct btd_adapter *adapter;

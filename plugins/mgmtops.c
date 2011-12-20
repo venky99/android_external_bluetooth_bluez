@@ -464,6 +464,31 @@ static void mgmt_new_key(int sk, uint16_t index, void *buf, size_t len)
 	btd_event_bonding_complete(&info->bdaddr, &ev->key.bdaddr, 0);
 }
 
+static void mgmt_rssi_update(int sk, uint16_t index, void *buf, size_t len)
+{
+	struct mgmt_ev_rssi_update *ev = buf;
+	struct controller_info *info;
+	char addr[18];
+
+	if (len < sizeof(*ev)) {
+		error("Too small mgmt_rssi_update event packet");
+		return;
+	}
+
+	ba2str(&ev->bdaddr, addr);
+	DBG("hci%u addr %s, rssi %d", index, addr, ev->rssi);
+
+
+	if (index > max_index) {
+		error("Unexpected index %u in mgmt_rssi_update", index);
+		return;
+	}
+
+	info = &controllers[index];
+
+	btd_event_rssi_update(&info->bdaddr, &ev->bdaddr, ev->rssi);
+}
+
 static void mgmt_device_connected(int sk, uint16_t index, void *buf, size_t len)
 {
 	struct mgmt_ev_device_connected *ev = buf;
@@ -1765,6 +1790,9 @@ static gboolean mgmt_event(GIOChannel *io, GIOCondition cond, gpointer user_data
 	case MGMT_EV_LOCAL_NAME_CHANGED:
 		mgmt_local_name_changed(sk, index, buf + MGMT_HDR_SIZE, len);
 		break;
+	case MGMT_EV_RSSI_UPDATE:
+		mgmt_rssi_update(sk, index, buf + MGMT_HDR_SIZE, len);
+		break;
 	case MGMT_EV_DEVICE_FOUND:
 		mgmt_device_found(sk, index, buf + MGMT_HDR_SIZE, len);
 		break;
@@ -2378,6 +2406,61 @@ static int mgmt_set_connection_params(int index, bdaddr_t *bdaddr,
 	return 0;
 }
 
+static int mgmt_set_rssi_reporter(int index, bdaddr_t *bdaddr,
+		int8_t rssiThreshold, uint16_t interval,
+		gboolean updateOnThreshExceed)
+{
+	char buf[MGMT_HDR_SIZE + sizeof(struct mgmt_cp_set_rssi_reporter)];
+	struct mgmt_hdr *hdr = (void *) buf;
+	struct mgmt_cp_set_rssi_reporter *cp = (void *) &buf[sizeof(*hdr)];
+	char addr[18];
+
+	ba2str(bdaddr, addr);
+	DBG("hci%d bdaddr %s", index, addr);
+
+	memset(buf, 0, sizeof(buf));
+
+	hdr->opcode = htobs(MGMT_OP_SET_RSSI_REPORTER);
+	hdr->index = htobs(index);
+	hdr->len = htobs(sizeof(*cp));
+
+	DBG("updateOnThreshExceed %d", updateOnThreshExceed);
+	bacpy(&cp->bdaddr, bdaddr);
+	cp->rssi_threshold = rssiThreshold;
+	cp->interval = interval;
+	cp->updateOnThreshExceed = updateOnThreshExceed;
+	DBG("cp->updateOnThreshExceed %d", cp->updateOnThreshExceed);
+
+	if (write(mgmt_sock, &buf, sizeof(buf)) < 0)
+		return -errno;
+
+	return 0;
+}
+
+static int mgmt_unset_rssi_reporter(int index, bdaddr_t *bdaddr)
+{
+	char buf[MGMT_HDR_SIZE + sizeof(struct mgmt_cp_unset_rssi_reporter)];
+	struct mgmt_hdr *hdr = (void *) buf;
+	struct mgmt_cp_unset_rssi_reporter *cp = (void *) &buf[sizeof(*hdr)];
+	char addr[18];
+
+	ba2str(bdaddr, addr);
+	DBG("hci%d bdaddr %s", index, addr);
+
+	memset(buf, 0, sizeof(buf));
+
+	hdr->opcode = htobs(MGMT_OP_UNSET_RSSI_REPORTER);
+	hdr->index = htobs(index);
+	hdr->len = htobs(sizeof(*cp));
+
+	bacpy(&cp->bdaddr, bdaddr);
+
+	if (write(mgmt_sock, &buf, sizeof(buf)) < 0)
+		return -errno;
+
+	return 0;
+}
+
 static struct btd_adapter_ops mgmt_ops = {
 	.setup = mgmt_setup,
 	.cleanup = mgmt_cleanup,
@@ -2420,6 +2503,8 @@ static struct btd_adapter_ops mgmt_ops = {
 	.add_remote_oob_data = mgmt_add_remote_oob_data,
 	.remove_remote_oob_data = mgmt_remove_remote_oob_data,
 	.set_connection_params = mgmt_set_connection_params,
+	.set_rssi_reporter = mgmt_set_rssi_reporter,
+	.unset_rssi_reporter = mgmt_unset_rssi_reporter,
 };
 
 static int mgmt_init(void)

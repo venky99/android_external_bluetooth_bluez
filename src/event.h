@@ -32,6 +32,7 @@ void btd_event_remote_name(bdaddr_t *local, bdaddr_t *peer, uint8_t status, char
 void btd_event_conn_complete(bdaddr_t *local, bdaddr_t *peer, uint8_t le);
 void btd_event_conn_failed(bdaddr_t *local, bdaddr_t *peer, uint8_t status);
 void btd_event_disconn_complete(bdaddr_t *local, bdaddr_t *peer);
+void btd_event_rssi_update(bdaddr_t *local, bdaddr_t *peer, int8_t rssi);
 void btd_event_bonding_complete(bdaddr_t *local, bdaddr_t *peer,
 							uint8_t status);
 void btd_event_simple_pairing_complete(bdaddr_t *local, bdaddr_t *peer, uint8_t status);

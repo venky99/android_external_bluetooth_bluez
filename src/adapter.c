@@ -4886,3 +4886,19 @@ int btd_adapter_set_connection_params(struct btd_adapter *adapter,
 			interval_min, interval_max, slave_latency,
 			timeout_multiplier);
 }
+
+int btd_adapter_register_rssi_watcher(struct btd_adapter *adapter,
+		bdaddr_t *bdaddr, int8_t rssi_threshold, uint16_t interval,
+		gboolean updateOnThreshExceed)
+{
+	DBG("updateOnThreshExceed %d", updateOnThreshExceed);
+	return adapter_ops->set_rssi_reporter(adapter->dev_id, bdaddr,
+			rssi_threshold, interval, updateOnThreshExceed);
+}
+
+int btd_adapter_unregister_rssi_watcher(struct btd_adapter *adapter,
+		bdaddr_t *bdaddr)
+{
+	DBG("btd_adapter_unregister_rssi_watcher");
+	return adapter_ops->unset_rssi_reporter(adapter->dev_id, bdaddr);
+}

@@ -159,6 +159,8 @@ struct btd_device {
 	gboolean	authorizing;
 	gint		ref;
 	GIOChannel	*tmp_sdp_io;		/* temp Channel */
+
+	int8_t		rssi;
 };
 
 static uint16_t uuid_list[] = {
@@ -945,6 +947,57 @@ fail:
 					"SetConnectionParams Failed");
 }
 
+static DBusMessage *register_rssi_watcher(DBusConnection *conn,
+						DBusMessage *msg,
+						void *user_data)
+{
+	struct btd_device *device = user_data;
+	uint16_t interval;
+	int16_t rssi_threshold;
+	gboolean updateOnThreshExceed;
+	int ret;
+
+	if (dbus_message_get_args(msg, NULL, DBUS_TYPE_INT16, &rssi_threshold,
+			DBUS_TYPE_UINT16, &interval,
+			DBUS_TYPE_BOOLEAN, &updateOnThreshExceed,
+			DBUS_TYPE_INVALID) == FALSE)
+		goto fail;
+
+	DBG("register_rssi_watcher updateOnThreshExceed %d",
+		(int)updateOnThreshExceed);
+	ret = btd_adapter_register_rssi_watcher(device->adapter,
+					&device->bdaddr, (int8_t) rssi_threshold,
+					interval, updateOnThreshExceed);
+
+	if (ret)
+		goto fail;
+
+	return dbus_message_new_method_return(msg);
+fail:
+	return g_dbus_create_error(msg, ERROR_INTERFACE ".Failed",
+					"RegisterRssiUpdateWatcher Failed");
+}
+
+static DBusMessage *unregister_rssi_watcher(DBusConnection *conn,
+						DBusMessage *msg,
+						void *user_data)
+{
+	struct btd_device *device = user_data;
+	int ret;
+
+	DBG("unregister_rssi_watcher ");
+	ret = btd_adapter_unregister_rssi_watcher(device->adapter,
+					&device->bdaddr);
+
+	if (ret)
+		goto fail;
+
+	return dbus_message_new_method_return(msg);
+fail:
+	return g_dbus_create_error(msg, ERROR_INTERFACE ".Failed",
+					"UnregisterRssiUpdateWatcher Failed");
+}
+
 static DBusMessage *get_service_attribute_value(DBusConnection *conn,
 						DBusMessage *msg,
 						void *user_data)
@@ -1007,6 +1060,8 @@ static GDBusMethodTable device_methods[] = {
 						G_DBUS_METHOD_FLAG_ASYNC},
 	{ "GetServiceAttributeValue",  "sq", "i",       get_service_attribute_value},
 	{ "SetConnectionParams",	"qqqq",	"",	set_connection_params	},
+	{ "RegisterRssiUpdateWatcher",	"nqb",	"",	register_rssi_watcher	},
+	{ "UnregisterRssiUpdateWatcher",	"",	"",	unregister_rssi_watcher	},
 	{ }
 };
 
@@ -1068,6 +1123,24 @@ void device_remove_connection(struct btd_device *device, DBusConnection *conn)
 
 	attrib_client_disconnect(device);
 
+}
+
+void device_update_rssi(struct btd_device *device, int8_t rssi)
+{
+
+	DBusConnection *conn = get_dbus_connection();
+
+	if (device->rssi == rssi) {
+		char addr[18];
+		ba2str(&device->bdaddr, addr);
+		DBG("Device %s RSSI is unchanged", addr);
+	}
+
+	device->rssi = rssi;
+	DBG("device->rssi property RSSI , value : %d ", device->rssi);
+	emit_property_changed(conn, device->path,
+		DEVICE_INTERFACE, "RSSI",
+		DBUS_TYPE_INT16, &device->rssi);
 }
 
 int device_get_handle(struct btd_device *device, int dd, uint16_t *handle)

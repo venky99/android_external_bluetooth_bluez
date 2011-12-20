@@ -238,6 +238,19 @@ struct mgmt_cp_encrypt_link {
 	uint8_t enable;
 } __packed;
 
+#define MGMT_OP_SET_RSSI_REPORTER   0x0022
+struct mgmt_cp_set_rssi_reporter {
+	bdaddr_t bdaddr;
+	int8_t rssi_threshold;
+	uint16_t interval;
+	uint8_t updateOnThreshExceed;
+} __packed;
+
+#define MGMT_OP_UNSET_RSSI_REPORTER 0x0023
+struct mgmt_cp_unset_rssi_reporter {
+	bdaddr_t bdaddr;
+} __packed;
+
 #define MGMT_EV_CMD_COMPLETE		0x0001
 struct mgmt_ev_cmd_complete {
 	uint16_t opcode;
@@ -363,4 +376,10 @@ struct mgmt_ev_remote_version {
 struct mgmt_ev_remote_features {
 	bdaddr_t bdaddr;
 	uint8_t features[8];
+} __packed;
+
+#define MGMT_EV_RSSI_UPDATE 0x0020
+struct mgmt_ev_rssi_update {
+	bdaddr_t bdaddr;
+	int8_t rssi;
 } __packed;

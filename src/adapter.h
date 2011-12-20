@@ -234,6 +234,10 @@ struct btd_adapter_ops {
 	int (*set_connection_params) (int index, bdaddr_t *bdaddr,
 			uint16_t interval_min, uint16_t interval_max,
 			uint16_t slave_latency, uint16_t timeout_multiplier);
+	int (*set_rssi_reporter) (int index, bdaddr_t *bdaddr,
+			uint16_t rssi_threshold, uint16_t interval,
+			gboolean updateOnThreshExceed);
+	int (*unset_rssi_reporter) (int index, bdaddr_t *bdaddr);
 };
 
 int btd_register_adapter_ops(struct btd_adapter_ops *ops, gboolean priority);
@@ -302,3 +306,10 @@ int btd_adapter_set_connection_params(struct btd_adapter *adapter,
  * This is information is used to enforce the master role to
  * avoid audio choppy behaviour in case of A2DP + Scan case. */
 void update_streaming_device(struct btd_device *dev, gboolean streaming);
+
+int btd_adapter_register_rssi_watcher(struct btd_adapter *adapter,
+		bdaddr_t *bdaddr, int8_t rssi_threshold, uint16_t interval,
+		gboolean updateOnThreshExceed);
+
+int btd_adapter_unregister_rssi_watcher(struct btd_adapter *adapter,
+		bdaddr_t *bdaddr);
