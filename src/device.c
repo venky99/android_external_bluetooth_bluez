@@ -147,6 +147,7 @@ struct btd_device {
 
 	gboolean	authorizing;
 	gint		ref;
+	GIOChannel	*tmp_sdp_io;		/* temp Channel */
 };
 
 static uint16_t uuid_list[] = {
@@ -1212,6 +1213,7 @@ struct btd_device *device_create(DBusConnection *conn,
 		}
 	}
 
+	device->tmp_sdp_io = NULL;
 	return btd_device_ref(device);
 }
 
@@ -2539,12 +2541,15 @@ void device_bonding_complete(struct btd_device *device, uint8_t status)
 		agent_cancel(auth->agent);
 
 	if (status) {
-		if (status == 0x06) {
+		if ((status == 0x06) || (status == 0x18)) {
 			DBG("Removing device link key since status is %d", status);
 			device_remove_bonding(device);
+			device_set_paired(device, FALSE);
 		}
 		device_cancel_authentication(device, TRUE);
 		device_cancel_bonding(device, status);
+		/* if sdp is running. */
+		close_sdp_channel(device);
 		return;
 	}
 
@@ -2653,6 +2658,8 @@ static void pincode_cb(struct agent *agent, DBusError *err,
 {
 	struct authentication_req *auth = data;
 	struct btd_device *device = auth->device;
+
+	close_sdp_channel(device);
 
 	/* No need to reply anything if the authentication already failed */
 	if (auth->cb == NULL)
@@ -2780,6 +2787,10 @@ int device_request_authentication(struct btd_device *device, auth_type_t type,
 
 	switch (type) {
 	case AUTH_TYPE_PINCODE:
+		if (isSdpRequired(device->bdaddr)) {
+			close_sdp_channel(device);
+			open_sdp_channel(device);
+		}
 		err = agent_request_pincode(agent, device, pincode_cb,
 								auth, NULL);
 		break;
@@ -2833,6 +2844,7 @@ static void cancel_authentication(struct authentication_req *auth)
 
 	switch (auth->type) {
 	case AUTH_TYPE_PINCODE:
+		close_sdp_channel(device);
 		((agent_pincode_cb) auth->cb)(agent, &err, NULL, device);
 		break;
 	case AUTH_TYPE_CONFIRM:
@@ -2873,6 +2885,7 @@ void device_cancel_authentication(struct btd_device *device, gboolean aborted)
 	if (!aborted)
 		cancel_authentication(auth);
 
+	close_sdp_channel(device);
 	device_auth_req_free(device);
 }
 
@@ -2996,4 +3009,84 @@ void device_set_class(struct btd_device *device, uint32_t value)
 
 	emit_property_changed(conn, device->path, DEVICE_INTERFACE, "Class",
 				DBUS_TYPE_UINT32, &value);
+}
+
+static void sdp_connect_cb(GIOChannel *chan, GError *err, gpointer user_data)
+{
+	struct btd_device *device = user_data;
+
+	GError *gerr = NULL;
+	DBG(" ");
+	if (err) {
+		error("%s", err->message);
+		goto failed;
+	}
+
+	if (!device->tmp_sdp_io)
+		device->tmp_sdp_io = g_io_channel_ref(chan);
+
+	if (gerr) {
+		error("%s", gerr->message);
+		g_error_free(gerr);
+		goto failed;
+	}
+	DBG("sdp_connect_cb successful");
+	return;
+
+failed:
+	device->tmp_sdp_io = NULL;
+
+}
+
+void open_sdp_channel(struct btd_device *device)
+{
+	GError *err = NULL;
+	GIOChannel *io;
+	bdaddr_t src;
+	device->tmp_sdp_io = NULL;
+	adapter_get_address(device->adapter, &src);
+	DBG(" ");
+	io = bt_io_connect(BT_IO_L2CAP, sdp_connect_cb, device,
+			NULL, &err,
+			BT_IO_OPT_SOURCE_BDADDR, &src,
+			BT_IO_OPT_DEST_BDADDR, &device->bdaddr,
+			BT_IO_OPT_PSM, SDP_PSM,
+			BT_IO_OPT_SEC_LEVEL, BT_SECURITY_SDP,
+			BT_IO_OPT_INVALID);
+	if (!io) {
+		error("%s", err->message);
+		g_error_free(err);
+		return;
+	}
+	device->tmp_sdp_io = io;
+	DBG("open_sdp_channel returned successful");
+}
+
+void close_sdp_channel(struct btd_device *device)
+{
+	if (NULL == device->tmp_sdp_io)
+		return;
+	g_io_channel_shutdown(device->tmp_sdp_io, TRUE, NULL);
+	g_io_channel_unref(device->tmp_sdp_io);
+	device->tmp_sdp_io = NULL;
+	DBG("Close sdp channel is successful");
+}
+
+gboolean isSdpRequired(bdaddr_t dest)
+{
+	char dstaddr[18];
+	char dstCompId[9];
+	int i;
+	ba2str(&dest, dstaddr);
+	DBG("dest address is %s", dstaddr);
+	for (i = 0; i < 8; i++)
+		dstCompId[i] = dstaddr[i];
+
+	dstCompId[8] = '\0';
+	DBG("dest CompId is %s", dstCompId);
+	if (g_strcmp0(dstCompId, "00:1A:1B") == 0) {
+		/* This compId carkits need SDP */
+		return TRUE;
+	}
+	return FALSE;
 }
