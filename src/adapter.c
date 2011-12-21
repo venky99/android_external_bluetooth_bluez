@@ -732,7 +732,7 @@ static GSList *remove_bredr(GSList *all)
 	return le;
 }
 
-static void stop_discovery(struct btd_adapter *adapter)
+static void stop_discovery(struct btd_adapter *adapter, uint8_t adapter_stop)
 {
 	pending_remote_name_cancel(adapter);
 
@@ -756,7 +756,8 @@ static void stop_discovery(struct btd_adapter *adapter)
 		return;
 	}
 
-	adapter_ops->stop_discovery(adapter->dev_id);
+	if (adapter_stop)
+		adapter_ops->stop_discovery(adapter->dev_id);
 }
 
 static void session_remove(struct session_req *req)
@@ -793,7 +794,7 @@ static void session_remove(struct session_req *req)
 
 		DBG("Stopping discovery");
 
-		stop_discovery(adapter);
+		stop_discovery(adapter, TRUE);
 	}
 }
 
@@ -1155,10 +1156,13 @@ void adapter_service_remove(struct btd_adapter *adapter, void *r)
 {
 	sdp_record_t *rec = r;
 
-	adapter->services = sdp_list_remove(adapter->services, rec);
+	if (adapter->up){
+		adapter->services = sdp_list_remove(adapter->services, rec);
 
-	if (sdp_list_find(adapter->services, &rec->svclass, uuid_cmp) == NULL)
-		adapter_ops->remove_uuid(adapter->dev_id, &rec->svclass);
+		if (!sdp_list_find(adapter->services, &rec->svclass, uuid_cmp))
+			adapter_ops->remove_uuid(adapter->dev_id,
+							 &rec->svclass);
+	}
 
 	adapter_emit_uuids_updated(adapter);
 }
@@ -3583,7 +3587,7 @@ int btd_adapter_stop(struct btd_adapter *adapter)
 	/* check pending requests */
 	reply_pending_requests(adapter);
 
-	stop_discovery(adapter);
+	stop_discovery(adapter, FALSE);
 
 	if (adapter->disc_sessions) {
 		g_slist_foreach(adapter->disc_sessions, (GFunc) session_free,
