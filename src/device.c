@@ -2714,11 +2714,13 @@ static void passkey_cb(struct agent *agent, DBusError *err,
 						uint32_t passkey, void *data)
 {
 	struct authentication_req *auth = data;
-	struct btd_device *device = auth->device;
+	struct btd_device *device;
 
 	/* No need to reply anything if the authentication already failed */
-	if (auth->cb == NULL)
+	if (!auth || !auth->cb)
 		return;
+
+	device = auth->device;
 
 	((agent_passkey_cb) auth->cb)(agent, err, passkey, device);
 
