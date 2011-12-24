@@ -537,6 +537,8 @@ static gboolean bnep_setup(GIOChannel *chan,
 	if (rsp)
 		goto reply;
 
+	rsp = BNEP_CONN_NOT_ALLOWED; // reset rsp to err value.
+
 	ns = find_server(na->servers, dst_role);
 	if (!ns) {
 		error("Server unavailable: (0x%x)", dst_role);
