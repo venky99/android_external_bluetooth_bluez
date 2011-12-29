@@ -116,8 +116,8 @@
 /* Requirements for read/write operations */
 enum {
 	ATT_NONE,		/* No restrictions */
-	ATT_AUTHENTICATION,	/* Authentication required */
 	ATT_AUTHORIZATION,	/* Authorization required */
+	ATT_AUTHENTICATION,	/* Authentication required */
 	ATT_NOT_PERMITTED,	/* Operation not permitted */
 };
 
@@ -136,6 +136,7 @@ struct attribute {
 struct att_data_list {
 	uint16_t num;
 	uint16_t len;
+	uint16_t cnt;
 	uint8_t **data;
 };
 
@@ -259,7 +260,8 @@ uint16_t enc_find_by_type_req(uint16_t start, uint16_t end, bt_uuid_t *uuid,
 			const uint8_t *value, int vlen, uint8_t *pdu, int len);
 uint16_t dec_find_by_type_req(const uint8_t *pdu, int len, uint16_t *start,
 		uint16_t *end, bt_uuid_t *uuid, uint8_t *value, int *vlen);
-uint16_t enc_find_by_type_resp(GSList *ranges, uint8_t *pdu, int len);
+uint16_t enc_find_by_type_resp(struct att_data_list *list, uint8_t *pdu,
+								int len);
 GSList *dec_find_by_type_resp(const uint8_t *pdu, int len);
 struct att_data_list *dec_read_by_grp_resp(const uint8_t *pdu, int len);
 uint16_t enc_read_by_type_req(uint16_t start, uint16_t end, bt_uuid_t *uuid,
@@ -285,8 +287,8 @@ uint16_t enc_read_blob_req(uint16_t handle, uint16_t offset, uint8_t *pdu,
 uint16_t dec_read_req(const uint8_t *pdu, int len, uint16_t *handle);
 uint16_t dec_read_blob_req(const uint8_t *pdu, int len, uint16_t *handle,
 							uint16_t *offset);
-uint16_t enc_read_resp(uint8_t *value, int vlen, uint8_t *pdu, int len);
-uint16_t enc_read_blob_resp(uint8_t *value, int vlen, uint16_t offset,
+uint16_t enc_read_resp(const uint8_t *value, int vlen, uint8_t *pdu, int len);
+uint16_t enc_read_blob_resp(const uint8_t *value, int vlen, uint16_t offset,
 							uint8_t *pdu, int len);
 uint16_t dec_read_resp(const uint8_t *pdu, int len, uint8_t *value, int *vlen);
 uint16_t enc_error_resp(uint8_t opcode, uint16_t handle, uint8_t status,
@@ -300,6 +302,10 @@ struct att_data_list *dec_find_info_resp(const uint8_t *pdu, int len,
 							uint8_t *format);
 uint16_t enc_notification(struct attribute *a, uint8_t *pdu, int len);
 uint16_t enc_indication(struct attribute *a, uint8_t *pdu, int len);
+uint16_t enc_notify(uint16_t handle, const uint8_t *value, int vlen,
+						uint8_t *pdu, int len);
+uint16_t enc_indicate(uint16_t handle, const uint8_t *value, int vlen,
+						uint8_t *pdu, int len);
 struct attribute *dec_indication(const uint8_t *pdu, int len);
 uint16_t enc_confirmation(uint8_t *pdu, int len);
 

@@ -95,6 +95,13 @@ int create_file(const char *filename, const mode_t mode)
 	return 0;
 }
 
+int delete_file(const char *filename)
+{
+	unlink(filename);
+
+	return 0;
+}
+
 int create_name(char *buf, size_t size, const char *path, const char *address, const char *name)
 {
 	return snprintf(buf, size, "%s/%s/%s", path, address, name);

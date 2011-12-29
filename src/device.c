@@ -2745,6 +2745,7 @@ void device_bonding_complete(struct btd_device *device, uint8_t status)
 		bonding_request_free(bonding);
 	} else {
 		if (!device->browse && !device->discov_timer &&
+				device_get_type(device) != DEVICE_TYPE_LE &&
 				main_opts.reverse_sdp) {
 			/* If we are not initiators and there is no currently
 			 * active discovery or discovery timer, set discovery

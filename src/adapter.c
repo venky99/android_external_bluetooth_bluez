@@ -3770,6 +3770,9 @@ void btd_adapter_unref(struct btd_adapter *adapter)
 	if (adapter->ref > 0)
 		return;
 
+	if (main_opts.attrib_server)
+		attrib_server_unreg_adapter(adapter);
+
 	path = g_strdup(adapter->path);
 
 	g_dbus_unregister_interface(connection, path, ADAPTER_INTERFACE);
@@ -3853,6 +3856,9 @@ struct btd_adapter *adapter_create(DBusConnection *conn, int id)
 		adapter_free(adapter);
 		return NULL;
 	}
+
+	if (main_opts.attrib_server)
+		attrib_server_reg_adapter(adapter);
 
 	return btd_adapter_ref(adapter);
 }
