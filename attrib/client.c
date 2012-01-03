@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2010  Nokia Corporation
  *  Copyright (C) 2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2011-2012 Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -375,12 +376,16 @@ static void primary_attrib_destroy(gpointer user_data)
 	struct primary *prim = user_data;
 	gboolean on_destroy = TRUE;
 
+	DBG("");
+	DBG("%s", prim->path);
+
 	g_slist_foreach(prim->chars, characteristic_clean, &on_destroy);
 	prim->connected = FALSE;
 
 	if (prim->discovery_msg) {
 		DBusMessage *reply;
 
+		DBG("discovery_msg %p", prim->discovery_msg);
 		reply = btd_error_failed(prim->discovery_msg, "Not connected");
 		g_dbus_send_message(prim->gatt->conn, reply);
 		prim->discovery_msg = NULL;
@@ -564,10 +569,17 @@ static void update_char_value(guint8 status, const guint8 *pdu,
 	struct gatt_service *gatt = prim->gatt;
 	struct characteristic *chr = current->chr;
 	DBusMessage *reply;
+	gboolean expected ;
 
 	DBG("");
 
-	if (status == 0)
+	expected = (chr->prim->discovery_msg != NULL) ||
+		(chr->msg != NULL);
+
+	if (!expected)
+		DBG("Unscheduled callback for %s", chr->path);
+
+	if (status == 0 && expected)
 		characteristic_set_value(chr, pdu + 1, len - 1);
 
 	if (chr->prim->discovery_msg != NULL) {
@@ -587,12 +599,11 @@ static void update_char_value(guint8 status, const guint8 *pdu,
 		}
 	}  else if (chr->msg != NULL) {
 
-		if (status == 0) {
+		if (status == 0)
 			reply = dbus_message_new_method_return(chr->msg);
-		} else {
+		else
 			reply = btd_error_failed(chr->msg,
-									 "Update characteristic value failed");
-		}
+				"Update characteristic value failed");
 
 		if (reply)
 			g_dbus_send_message(gatt->conn, reply);
@@ -600,7 +611,9 @@ static void update_char_value(guint8 status, const guint8 *pdu,
 		chr->msg = NULL;
 	}
 
-	g_attrib_unref(gatt->attrib);
+	if (expected)
+		g_attrib_unref(gatt->attrib);
+
 	g_free(current);
 }
 
@@ -715,11 +728,12 @@ static void gatt_write_char_resp(guint8 status, const guint8 *pdu,
 				chr->msg = NULL;
 			}
 		}
+
+		g_attrib_unref(gatt->attrib);
+
 	} else {
 		DBG("Characteristics Dbus message is NULL");
 	}
-
-	g_attrib_unref(gatt->attrib);
 
 }
 
@@ -767,11 +781,13 @@ static void gatt_write_cli_conf_resp(guint8 status, const guint8 *pdu,
 				chr->msg = NULL;
 			}
 		}
+
+		g_attrib_unref(gatt->attrib);
+
 	} else {
 		DBG("Characteristics Dbus message is NULL");
 	}
 
-	g_attrib_unref(gatt->attrib);
 }
 
 static DBusMessage *set_value(DBusConnection *conn, DBusMessage *msg,
@@ -786,7 +802,7 @@ static DBusMessage *set_value(DBusConnection *conn, DBusMessage *msg,
 	int len;
 
 	if (chr->msg) {
-		DBG("chr->msg is not NULL : Other Gatt operation is in progress chr->msg");
+		DBG("chr->msg is not NULL (%p): Other Gatt operation is in progress", chr->msg);
 		DBusMessage *reply = btd_error_failed(msg, "Gatt operation already in progress");
 		g_error_free(gerr);
 		return reply;
@@ -838,7 +854,7 @@ static DBusMessage *set_cli_conf(DBusConnection *conn, DBusMessage *msg,
 	int len;
 
 	if (chr->msg) {
-		DBG("chr->msg is not NULL : Other Gatt operation is in progress chr->msg");
+		DBG("chr->msg is not NULL (%p) : Other Gatt operation is in progress", chr->msg);
 		DBusMessage *reply = btd_error_failed(msg, "Gatt operation already in progress");
 		g_error_free(gerr);
 		return reply;
@@ -962,7 +978,7 @@ static DBusMessage *fetch_value(DBusConnection *conn,
 	DBG("");
 
 	if (chr->msg) {
-		DBG("chr->msg is not NULL : Other Gatt operation is in progress");
+		DBG("chr->msg is not NULL (%p) : Other Gatt operation is in progress", chr->msg);
 		DBusMessage *reply = btd_error_failed(msg, "Gatt operation already in progress");
 		g_error_free(gerr);
 		return reply;
