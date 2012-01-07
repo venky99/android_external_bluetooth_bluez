@@ -141,7 +141,7 @@
 #define ERROR_UID_NOT_EXIST	0X09
 
 /* AVRCP1.3 MetaData Attributes ID */
-#define METADATA_DEFAULT_MASK	0x7F
+#define METADATA_DEFAULT_MASK	0x5F
 #define METADATA_TITLE		0X1
 #define METADATA_ARTIST		0X2
 #define METADATA_ALBUM		0X3
@@ -154,6 +154,7 @@
 #define METADATA_MAX_NUMBER_LEN	40
 #define DEFAULT_METADATA_STRING	"Unknown"
 #define DEFAULT_METADATA_NUMBER	"1234567890"
+#define METADATA_MAXIMUM_CNT	7
 #define METADATA_SUPPORTED_CNT	6
 #define AVRCP_MAX_PKT_SIZE	512
 
@@ -775,10 +776,6 @@ static gboolean control_cb(GIOChannel *chan, GIOCondition cond,
 			uint8_t index = 0;
 			for (index = 0; index < att_count; index++) {
 				int att_val = htonl(*att_id);
-				if(att_val == METADATA_GENRE){
-					att_count--;  // we donot support genre
-					continue;
-				}
 				att_mask |=  1 << (att_val - 1);
 				att_id += 1;
 			}
@@ -787,8 +784,10 @@ static gboolean control_cb(GIOChannel *chan, GIOCondition cond,
 				att_mask = METADATA_DEFAULT_MASK;
 			}
 			DBG("MetaData mask is %d", att_mask);
-			if (att_count > METADATA_SUPPORTED_CNT)
+			if (att_count > METADATA_MAXIMUM_CNT) {
 				att_count = METADATA_SUPPORTED_CNT;
+				att_mask = METADATA_DEFAULT_MASK;
+			}
 			DBG("MetaData mask is %d att_count is %d", att_mask, att_count);
 			send_meta_data(control, avctp->transaction, att_mask, att_count);
 			return TRUE;
@@ -1890,6 +1889,17 @@ static int send_meta_data(struct control *control, uint8_t trans_id,
 		strncpy(mdata_field->val, mdata->playing_time, len);
 		meta_data_len += len;
 	}
+
+	if (att_mask & (1 << (METADATA_GENRE - 1))) {
+		mdata_field->att_id = htonl(METADATA_GENRE);
+		mdata_field->char_set_id = htons(CHARACTER_SET_UTF8);
+		len = strlen("Unknown");
+		mdata_field->att_len = htons(len);
+		strncpy(mdata_field->val, "Unknown", len);
+		meta_data_len += len;
+		DBG("METADATA_GENRE %d %d", len, meta_data_len);
+	}
+
 	if ((meta_data_len + header_len - AVCTP_HEADER_LENGTH)
 							> AVRCP_MAX_PKT_SIZE) {
 		DBG("meta len is %d header len is %d", meta_data_len, header_len);
