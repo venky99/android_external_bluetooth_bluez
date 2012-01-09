@@ -2599,7 +2599,7 @@ void device_bonding_complete(struct btd_device *device, uint8_t status)
 {
 	struct bonding_req *bonding = device->bonding;
 	struct authentication_req *auth = device->authr;
-	bdaddr_t bdaddr;
+	bdaddr_t bdaddr, src;
 
 	DBG("bonding %p status 0x%02x", bonding, status);
 
@@ -2624,6 +2624,17 @@ void device_bonding_complete(struct btd_device *device, uint8_t status)
 	/* If we're already paired no need to update device paried */
 	if (!(device->paired))
 		device_set_paired(device, TRUE);
+
+	adapter_get_address(device->adapter, &src);
+
+	if (device->tmp_records == NULL)
+		device->tmp_records = read_records(&src, &device->bdaddr);
+
+	if (device->tmp_records != NULL) {
+		DBG("SDP is already done, returning");
+		return;
+	}
+
 
 	/* If we were initiators start service discovery immediately.
 	 * However if the other end was the initator wait a few seconds
