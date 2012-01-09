@@ -4453,12 +4453,14 @@ static int adapter_authorize(struct btd_adapter *adapter, const bdaddr_t *dst,
 	auth->device = device;
 	auth->adapter = adapter;
 
+#ifndef ANDROID
 	if (device_is_trusted(device) == TRUE) {
 		adapter->auth_idle_id = g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,
 							auth_idle_cb, auth,
 							g_free);
 		return 0;
 	}
+#endif
 
 	agent = device_get_agent(device);
 	if (!agent) {
