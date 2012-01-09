@@ -4205,13 +4205,15 @@ void adapter_update_found_devices(struct btd_adapter *adapter, bdaddr_t *bdaddr,
 
 	/* Only cache Class for non-LE devices */
 	/* Only cache RSSI if this find same kind as last */
+	/* Discard LE results for dual-mode devices */
 	if (!le) {
 		dev->le = 0;
 		dev->class = class;
 		dev->rssi = rssi;
 	} else if (dev->le)
 		dev->rssi = rssi;
-
+	else
+		return;
 
 	adapter->found_devices = g_slist_sort(adapter->found_devices,
 						(GCompareFunc) dev_rssi_cmp);
