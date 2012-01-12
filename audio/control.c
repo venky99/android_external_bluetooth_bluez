@@ -485,6 +485,44 @@ static void send_key(int fd, uint16_t key, int pressed)
 	send_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
+static gboolean handle_key_op (struct control *control,
+				const unsigned char op, int pressed)
+{
+	int i;
+	for (i = 0; key_map[i].name != NULL; i++) {
+		uint8_t key_quirks;
+
+		if ((op & 0x7F) != key_map[i].avrcp)
+			continue;
+
+		DBG("AVRCP: %s %d", key_map[i].name, pressed);
+
+		key_quirks = control->key_quirks[key_map[i].avrcp];
+
+		if (key_quirks & QUIRK_NO_RELEASE) {
+			if (!pressed) {
+				DBG("AVRCP: Ignoring release");
+				break;
+			}
+
+			DBG("AVRCP: treating key press as press + release");
+			send_key(control->uinput, key_map[i].uinput, 1);
+			send_key(control->uinput, key_map[i].uinput, 0);
+			break;
+		}
+
+		send_key(control->uinput, key_map[i].uinput, pressed);
+		break;
+	}
+
+	if (key_map[i].name == NULL) {
+		DBG("AVRCP: unknown button 0x%02X pressed =%d",
+						op & 0x7F, pressed);
+		return FALSE;
+	}
+	return TRUE;
+}
+
 static gboolean handle_panel_passthrough(struct control *control,
 					const unsigned char *operands,
 					int operand_count)
@@ -521,39 +559,7 @@ static gboolean handle_panel_passthrough(struct control *control,
 		}
 	}
 #endif
-
-	for (i = 0; key_map[i].name != NULL; i++) {
-		uint8_t key_quirks;
-
-		if ((operands[0] & 0x7F) != key_map[i].avrcp)
-			continue;
-
-		DBG("AVRCP: %s %s", key_map[i].name, status);
-
-		key_quirks = control->key_quirks[key_map[i].avrcp];
-
-		if (key_quirks & QUIRK_NO_RELEASE) {
-			if (!pressed) {
-				DBG("AVRCP: Ignoring release");
-				break;
-			}
-
-			DBG("AVRCP: treating key press as press + release");
-			send_key(control->uinput, key_map[i].uinput, 1);
-			send_key(control->uinput, key_map[i].uinput, 0);
-			break;
-		}
-
-		send_key(control->uinput, key_map[i].uinput, pressed);
-		break;
-	}
-
-	if (key_map[i].name == NULL) {
-		DBG("AVRCP: unknown button 0x%02X %s",
-						operands[0] & 0x7F, status);
-		return FALSE;
-	}
-	return TRUE;
+	return handle_key_op(control, operands[0],pressed);
 }
 
 static void avctp_disconnected(struct audio_device *dev)
@@ -1593,6 +1599,24 @@ void control_update(struct audio_device *dev, uint16_t uuid16)
 
 	if (uuid16 == AV_REMOTE_TARGET_SVCLASS_ID)
 		control->target = TRUE;
+}
+
+void control_suspend(struct audio_device *dev)
+{
+	struct control *control = dev->control;
+	if (!control)
+		return;
+	handle_key_op(control, PAUSE_OP, 1);
+	handle_key_op(control, PAUSE_OP, 0);
+}
+
+void control_resume(struct audio_device *dev)
+{
+	struct control *control = dev->control;
+	if (!control)
+		return;
+	handle_key_op(control, PLAY_OP, 1);
+	handle_key_op(control, PLAY_OP, 0);
 }
 
 struct control *control_init(struct audio_device *dev, uint16_t uuid16)

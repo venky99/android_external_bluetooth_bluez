@@ -42,6 +42,7 @@
 #include "manager.h"
 #include "avdtp.h"
 #include "sink.h"
+#include "control.h"
 #include "source.h"
 #include "unix.h"
 #include "media.h"
@@ -78,6 +79,7 @@ struct a2dp_sep {
 	gboolean locked;
 	gboolean suspending;
 	gboolean starting;
+	gboolean remote_suspend;
 };
 
 struct a2dp_setup_cb {
@@ -963,6 +965,7 @@ static gboolean start_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 {
 	struct a2dp_sep *a2dp_sep = user_data;
 	struct a2dp_setup *setup;
+	struct audio_device *dev;
 
 	if (a2dp_sep->type == AVDTP_SEP_TYPE_SINK)
 		DBG("Sink %p: Start_Ind", sep);
@@ -979,6 +982,15 @@ static gboolean start_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 						(GSourceFunc) suspend_timeout,
 						a2dp_sep);
 	}
+
+	if (a2dp_sep->remote_suspend) {
+		dev = a2dp_get_dev(session);
+		DBG("dev value is %p: ", dev);
+		if (dev)
+			control_resume(dev);
+		a2dp_sep->remote_suspend = FALSE;
+	}
+
 
 	return TRUE;
 }
@@ -1003,7 +1015,7 @@ static void start_cfm(struct avdtp *session, struct avdtp_local_sep *sep,
 		setup->stream = NULL;
 		setup->err = err;
 	}
-
+	a2dp_sep->remote_suspend = FALSE;
 	finalize_resume(setup);
 }
 
@@ -1012,6 +1024,7 @@ static gboolean suspend_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 				void *user_data)
 {
 	struct a2dp_sep *a2dp_sep = user_data;
+	struct audio_device *dev;
 
 	if (a2dp_sep->type == AVDTP_SEP_TYPE_SINK)
 		DBG("Sink %p: Suspend_Ind", sep);
@@ -1023,6 +1036,13 @@ static gboolean suspend_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 		a2dp_sep->suspend_timer = 0;
 		avdtp_unref(a2dp_sep->session);
 		a2dp_sep->session = NULL;
+	}
+
+	dev = a2dp_get_dev(session);
+	DBG("dev value is %p: ", dev);
+	if (dev) {
+		control_suspend(dev);
+		a2dp_sep->remote_suspend = TRUE;
 	}
 
 	return TRUE;
@@ -1089,6 +1109,8 @@ static gboolean close_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 	if (!setup)
 		return TRUE;
 
+	a2dp_sep->remote_suspend = FALSE;
+
 	finalize_setup_errno(setup, -ECONNRESET, finalize_suspend,
 							finalize_resume, NULL);
 
@@ -1143,6 +1165,8 @@ static void close_cfm(struct avdtp *session, struct avdtp_local_sep *sep,
 	if (!setup)
 		return;
 
+	a2dp_sep->remote_suspend = FALSE;
+
 	if (err) {
 		setup->stream = NULL;
 		setup->err = err;
@@ -1168,6 +1192,7 @@ static gboolean abort_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 	else
 		DBG("Source %p: Abort_Ind", sep);
 
+	a2dp_sep->remote_suspend = FALSE;
 	a2dp_sep->stream = NULL;
 
 	return TRUE;
@@ -1189,6 +1214,7 @@ static void abort_cfm(struct avdtp *session, struct avdtp_local_sep *sep,
 	if (!setup)
 		return;
 
+	a2dp_sep->remote_suspend = FALSE;
 	setup_unref(setup);
 }
 
@@ -1651,6 +1677,7 @@ proceed:
 	sep->codec = codec;
 	sep->type = type;
 	sep->delay_reporting = delay_reporting;
+	sep->remote_suspend = FALSE;
 
 	if (type == AVDTP_SEP_TYPE_SOURCE) {
 		l = &server->sources;
