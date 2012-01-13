@@ -1915,11 +1915,17 @@ static int send_meta_data(struct control *control, uint8_t trans_id,
 	}
 
 	if (att_mask & (1 << (METADATA_GENRE - 1))) {
+		op = (uint8_t *)mdata_field;
+		if (len > 0) {
+			op += METADATA_FIELD_LEN;
+			op += len;
+		}
+		mdata_field = (struct meta_data_field *)op;
 		mdata_field->att_id = htonl(METADATA_GENRE);
 		mdata_field->char_set_id = htons(CHARACTER_SET_UTF8);
-		len = strlen("Unknown");
+		len = strlen(DEFAULT_METADATA_STRING);
 		mdata_field->att_len = htons(len);
-		strncpy(mdata_field->val, "Unknown", len);
+		strncpy(mdata_field->val, DEFAULT_METADATA_STRING, len);
 		meta_data_len += len;
 		DBG("METADATA_GENRE %d %d", len, meta_data_len);
 	}
