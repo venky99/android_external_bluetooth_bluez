@@ -91,6 +91,7 @@
 #define DISCONNECT_TIMEOUT 1
 #define STREAM_SETUP_TIMEOUT 3 // 2 seconds for SDP to start
 #define STREAM_TIMEOUT 20
+#define AVDTP_FLUSH_TIMEOUT 0x14D
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 
@@ -2538,6 +2539,28 @@ static GIOChannel *l2cap_connect(struct avdtp *session)
 	return io;
 }
 
+static GIOChannel *l2cap_stream_connect(struct avdtp *session)
+{
+	GError *err = NULL;
+	GIOChannel *io;
+
+	io = bt_io_connect(BT_IO_L2CAP, avdtp_connect_cb, session,
+				NULL, &err,
+				BT_IO_OPT_SOURCE_BDADDR, &session->server->src,
+				BT_IO_OPT_DEST_BDADDR, &session->dst,
+				BT_IO_OPT_PSM, AVDTP_PSM,
+				BT_IO_OPT_FLUSH_TIMEOUT, AVDTP_FLUSH_TIMEOUT,
+				BT_IO_OPT_INVALID);
+
+	if (!io) {
+		error("%s", err->message);
+		g_error_free(err);
+		return NULL;
+	}
+
+	return io;
+}
+
 static void queue_request(struct avdtp *session, struct pending_req *req,
 			gboolean priority)
 {
@@ -2866,7 +2889,7 @@ static gboolean avdtp_open_resp(struct avdtp *session, struct avdtp_stream *stre
 {
 	struct avdtp_local_sep *sep = stream->lsep;
 
-	stream->io = l2cap_connect(session);
+	stream->io = l2cap_stream_connect(session);
 	if (!stream->io) {
 		avdtp_sep_set_state(session, sep, AVDTP_STATE_IDLE);
 		return FALSE;
