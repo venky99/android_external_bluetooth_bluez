@@ -3,6 +3,7 @@
  *
  *  Copyright (C) 2010  Nokia Corporation
  *  Copyright (C) 2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -349,4 +350,12 @@ struct mgmt_ev_encrypt_change {
 struct mgmt_ev_remote_class {
 	bdaddr_t bdaddr;
 	uint8_t dev_class[3];
+} __packed;
+
+#define MGMT_EV_REMOTE_VERSION		0x0018
+struct mgmt_ev_remote_version {
+	bdaddr_t bdaddr;
+	uint8_t lmp_ver;
+	uint16_t manufacturer;
+	uint8_t lmp_subver;
 } __packed;

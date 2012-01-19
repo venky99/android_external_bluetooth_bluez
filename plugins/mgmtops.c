@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2010  Nokia Corporation
  *  Copyright (C) 2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -1620,6 +1621,32 @@ static void mgmt_remote_class(int sk, uint16_t index, void *buf, size_t len)
 	btd_event_remote_class(&info->bdaddr, &ev->bdaddr, class);
 }
 
+static void mgmt_remote_version(int sk, uint16_t index, void *buf, size_t len)
+{
+	struct mgmt_ev_remote_version *ev = buf;
+	struct controller_info *info;
+	char addr[18];
+	uint32_t class;
+
+	if (len < sizeof(*ev)) {
+		error("Too small mgmt_remote_class packet");
+		return;
+	}
+
+	if (index > max_index) {
+		error("Unexpected index %u in remote_class event", index);
+		return;
+	}
+
+	info = &controllers[index];
+
+	ba2str(&ev->bdaddr, addr);
+
+	write_version_info(&info->bdaddr, &ev->bdaddr,
+					btohs(ev->manufacturer), ev->lmp_ver,
+					btohs(ev->lmp_subver));
+}
+
 static gboolean mgmt_event(GIOChannel *io, GIOCondition cond, gpointer user_data)
 {
 	char buf[MGMT_BUF_SIZE];
@@ -1734,6 +1761,9 @@ static gboolean mgmt_event(GIOChannel *io, GIOCondition cond, gpointer user_data
 		break;
 	case MGMT_EV_REMOTE_CLASS:
 		mgmt_remote_class(sk, index, buf + MGMT_HDR_SIZE, len);
+		break;
+	case MGMT_EV_REMOTE_VERSION:
+		mgmt_remote_version(sk, index, buf + MGMT_HDR_SIZE, len);
 		break;
 	default:
 		error("Unknown Management opcode %u (index %u)", opcode, index);
