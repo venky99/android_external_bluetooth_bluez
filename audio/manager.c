@@ -147,6 +147,9 @@ gboolean server_is_enabled(bdaddr_t *src, uint16_t svc)
 	case HANDSFREE_AGW_SVCLASS_ID:
 		return enabled.gateway;
 	case AUDIO_SINK_SVCLASS_ID:
+#ifdef ANDROID
+	case ADVANCED_AUDIO_SVCLASS_ID:
+#endif
 		return enabled.sink;
 	case AUDIO_SOURCE_SVCLASS_ID:
 		return enabled.source;
@@ -205,6 +208,9 @@ static void handle_uuid(const char *uuidstr, struct audio_device *device)
 		if (enabled.gateway && (device->gateway == NULL))
 			device->gateway = gateway_init(device);
 		break;
+#ifdef ANDROID
+	case ADVANCED_AUDIO_SVCLASS_ID:
+#endif
 	case AUDIO_SINK_SVCLASS_ID:
 		DBG("Found Audio Sink");
 		if (device->sink == NULL)
