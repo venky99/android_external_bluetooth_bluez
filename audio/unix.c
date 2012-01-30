@@ -849,10 +849,12 @@ failed:
 		client->cb_id = 0;
 	}
 
-	if (a2dp->sep) {
-		a2dp_sep_unlock(a2dp->sep, a2dp->session);
-		a2dp->sep = NULL;
+	if (a2dp->session && a2dp->stream) {
+		a2dp->sep = a2dp_get_sep(a2dp->session, a2dp->stream);
+		if (a2dp->sep && a2dp_sep_get_lock(a2dp->sep))
+			a2dp_sep_unlock(a2dp->sep, a2dp->session);
 	}
+	a2dp->sep = NULL;
 
 	avdtp_unref(a2dp->session);
 	a2dp->session = NULL;
