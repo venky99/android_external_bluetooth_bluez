@@ -3,7 +3,7 @@
  *  BlueZ - Bluetooth protocol stack for Linux
  *
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
- *
+ *  Copyright (C) 2012, Code Aurora Forum. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -54,6 +54,37 @@
 #define NETWORK_SERVER_INTERFACE "org.bluez.NetworkServer"
 #define SETUP_TIMEOUT		1
 #define BNEP_EXT_CONTROL 0
+
+typedef struct _svc_uuid {
+	uint64_t h; /* 64-bit higher uuid part */
+	uint64_t l; /* 64-bit lower uuid part */
+}svc_uuid;
+
+#define PANU_SVC_UUID_H    0x0000111500001000
+#define PANU_SVC_UUID_L    0x800000805F9B34FB
+#define NAP_SVC_UUID_H     0x0000111600001000
+#define NAP_SVC_UUID_L     0x800000805F9B34FB
+#define GN_SVC_UUID_H      0x0000111700001000
+#define GN_SVC_UUID_L      0x800000805F9B34FB
+
+
+svc_uuid bnep_svc_uuid[] = {
+	{
+		/* PANU 128-bit UUID */
+		.h = PANU_SVC_UUID_H,
+		.l = PANU_SVC_UUID_L,
+	},
+	{
+		/* NAP 128-bit UUID */
+		.h = NAP_SVC_UUID_H,
+		.l = NAP_SVC_UUID_L,
+	},
+	{
+		/* GN 128-bit UUID */
+		.h = GN_SVC_UUID_H,
+		.l = GN_SVC_UUID_L,
+	}
+};
 
 /* Pending Authorization */
 struct network_session {
@@ -412,10 +443,21 @@ static uint16_t bnep_setup_chk(uint16_t dst_role, uint16_t src_role)
 	return BNEP_CONN_INVALID_DST;
 }
 
+static inline uint64_t get_u64(uint64_t *src)
+{
+	uint64_t u64 = bt_get_unaligned(src), temp;
+	temp = ntohl(u64 & 0xFFFFFFFF);
+	u64 = (temp << 32) | ntohl(u64 >> 32);
+	return u64;
+}
+
 static uint16_t bnep_setup_decode(struct bnep_setup_conn_req *req,
 				uint16_t *dst_role, uint16_t *src_role)
 {
 	uint8_t *dest, *source;
+	uint64_t uuid_l, uuid_h;
+	uint8_t svc_cnt;
+	int i;
 
 	dest = req->service;
 	source = req->service + req->uuid_size;
@@ -426,9 +468,51 @@ static uint16_t bnep_setup_decode(struct bnep_setup_conn_req *req,
 		*src_role = ntohs(bt_get_unaligned((uint16_t *) source));
 		break;
 	case 4: /* UUID32 */
+		/* Pre-validate 32-bit UUID */
+		uuid_l = ntohl(bt_get_unaligned((uint32_t *) dest));
+		if (uuid_l != BNEP_SVC_NAP && uuid_l != BNEP_SVC_GN &&
+				uuid_l != BNEP_SVC_PANU)
+			return BNEP_CONN_INVALID_DST;
+		*dst_role = (uint16_t)uuid_l;
+		uuid_l = ntohl(bt_get_unaligned((uint32_t *) source));
+		if (uuid_l != BNEP_SVC_NAP && uuid_l != BNEP_SVC_GN &&
+				uuid_l != BNEP_SVC_PANU)
+			return BNEP_CONN_INVALID_SRC;
+		*src_role = (uint16_t)uuid_l;
+		break;
 	case 16: /* UUID128 */
-		*dst_role = ntohl(bt_get_unaligned((uint32_t *) dest));
-		*src_role = ntohl(bt_get_unaligned((uint32_t *) source));
+		/* Pre-validate 128-bit UUID */
+		svc_cnt = sizeof(bnep_svc_uuid)/sizeof(bnep_svc_uuid[0]);
+		uuid_h = get_u64((uint64_t *) dest);
+		uuid_l = get_u64((uint64_t *) (dest + 8));
+		for (i = 0; i < svc_cnt; i++) {
+			if (uuid_h == bnep_svc_uuid[i].h &&
+					uuid_l == bnep_svc_uuid[i].l) {
+				/* Consider only 16-bit equivalent UUID
+                                 * for further operations
+				 */
+				*dst_role = (uint16_t)((uuid_h >> 32)
+							& 0xFFFFFFFF);
+				break;
+			}
+		}
+		if (i == svc_cnt)
+			return BNEP_CONN_INVALID_DST;
+		uuid_h = get_u64((uint64_t *) source);
+		uuid_l = get_u64((uint64_t *) (source + 8));
+		for (i = 0; i < svc_cnt; i++) {
+			if (uuid_h == bnep_svc_uuid[i].h &&
+					uuid_l == bnep_svc_uuid[i].l) {
+				/* Consider only 16-bit equivalent UUID
+                                 * for further operations
+				 */
+				*src_role = (uint16_t)((uuid_h >> 32)
+							& 0xFFFFFFFF);
+				break;
+			}
+		}
+		if (i == svc_cnt)
+			return BNEP_CONN_INVALID_SRC;
 		break;
 	default:
 		return BNEP_CONN_INVALID_SVC;
