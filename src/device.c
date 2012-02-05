@@ -2607,10 +2607,18 @@ void device_bonding_complete(struct btd_device *device, uint8_t status)
 		agent_cancel(auth->agent);
 
 	if (status) {
-		if ((status == 0x06) || (status == 0x18)) {
+		if ((status == HCI_PIN_OR_KEY_MISSING) ||
+				(status == HCI_PAIRING_NOT_ALLOWED) ||
+				(status == HCI_AUTHENTICATION_FAILURE)) {
 			DBG("Removing device link key since status is %d", status);
-			device_remove_bonding(device);
-			device_set_paired(device, FALSE);
+			device_remove_stored(device);
+
+			if (device->tmp_records) {
+				DBG("Removing tmp records");
+				sdp_list_free(device->tmp_records,
+							(sdp_free_func_t) sdp_record_free);
+				device->tmp_records = NULL;
+			}
 		}
 		device_cancel_authentication(device, TRUE);
 		device_cancel_bonding(device, status);

@@ -88,7 +88,7 @@
 
 #define REQ_TIMEOUT 6
 #define ABORT_TIMEOUT 2
-#define DISCONNECT_TIMEOUT 1
+#define DISCONNECT_TIMEOUT 3
 #define STREAM_SETUP_TIMEOUT 3 // 2 seconds for SDP to start
 #define STREAM_TIMEOUT 20
 #define AVDTP_FLUSH_TIMEOUT 0x14D
