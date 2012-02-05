@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2010-2012, Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -52,6 +53,8 @@
 #include "gateway.h"
 #include "unix.h"
 #include "glib-helper.h"
+#include "../src/device.h"
+#include "storage.h"
 
 #define check_nul(str) (str[sizeof(str) - 1] == '\0')
 
@@ -299,7 +302,6 @@ static void headset_discovery_complete(struct audio_device *dev, void *user_data
 	ba2str(&dev->src, rsp->source);
 	ba2str(&dev->dst, rsp->destination);
 	strncpy(rsp->object, dev->path, sizeof(rsp->object));
-
 	unix_ipc_sendmsg(client, &rsp->h);
 
 	return;
@@ -629,6 +631,7 @@ static void a2dp_discovery_complete(struct avdtp *session, GSList *seps,
 	char buf[BT_SUGGESTED_BUFFER_SIZE];
 	struct bt_get_capabilities_rsp *rsp = (void *) buf;
 	struct a2dp_data *a2dp = &client->d.a2dp;
+	uint16_t version;
 
 	if (!g_slist_find(clients, client)) {
 		DBG("Client disconnected during discovery");
@@ -695,6 +698,16 @@ static void a2dp_discovery_complete(struct avdtp *session, GSList *seps,
 
 		a2dp_append_codec(rsp, cap, seid, type, configured, lock);
 	}
+
+
+	read_version_info(&client->dev->src, &client->dev->dst, &version);
+
+	DBG("remote device version is %d", version);
+
+	if (version < 3)
+		rsp->isEdrCapable = FALSE;
+	else
+		rsp->isEdrCapable = TRUE;
 
 	unix_ipc_sendmsg(client, &rsp->h);
 

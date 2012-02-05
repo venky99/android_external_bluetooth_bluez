@@ -4,7 +4,7 @@
  *
  *  Copyright (C) 2006-2007  Nokia Corporation
  *  Copyright (C) 2004-2008  Marcel Holtmann <marcel@holtmann.org>
- *  Copyright (C) 2010, Code Aurora Forum. All rights reserved.
+ *  Copyright (C) 2010-2012, Code Aurora Forum. All rights reserved.
  *
  *
  *  This library is free software; you can redistribute it and/or
@@ -154,6 +154,7 @@ struct bluetooth_data {
 
 	/* used for pacing our writes to the output socket */
 	uint64_t	next_write;
+	uint8_t	isEdrCapable;
 };
 
 #define CP_TYPE_SCMS_T 		0x0002
@@ -347,7 +348,7 @@ error:
 	return err;
 }
 
-static uint8_t default_bitpool(uint8_t freq, uint8_t mode)
+static uint8_t high_quality_default_bitpool(uint8_t freq, uint8_t mode)
 {
 	switch (freq) {
 	case BT_SBC_SAMPLING_FREQ_16000:
@@ -383,11 +384,47 @@ static uint8_t default_bitpool(uint8_t freq, uint8_t mode)
 	}
 }
 
+static uint8_t medium_quality_default_bitpool(uint8_t freq, uint8_t mode)
+{
+	switch (freq) {
+	case BT_SBC_SAMPLING_FREQ_16000:
+	case BT_SBC_SAMPLING_FREQ_32000:
+		return 35;
+	case BT_SBC_SAMPLING_FREQ_44100:
+		switch (mode) {
+		case BT_A2DP_CHANNEL_MODE_MONO:
+		case BT_A2DP_CHANNEL_MODE_DUAL_CHANNEL:
+			return 19;
+		case BT_A2DP_CHANNEL_MODE_STEREO:
+		case BT_A2DP_CHANNEL_MODE_JOINT_STEREO:
+			return 35;
+		default:
+			ERR("Invalid channel mode %u", mode);
+			return 35;
+		}
+	case BT_SBC_SAMPLING_FREQ_48000:
+		switch (mode) {
+		case BT_A2DP_CHANNEL_MODE_MONO:
+		case BT_A2DP_CHANNEL_MODE_DUAL_CHANNEL:
+			return 18;
+		case BT_A2DP_CHANNEL_MODE_STEREO:
+		case BT_A2DP_CHANNEL_MODE_JOINT_STEREO:
+			return 33;
+		default:
+			ERR("Invalid channel mode %u", mode);
+			return 33;
+		}
+	default:
+		ERR("Invalid sampling freq %u", freq);
+		return 35;
+	}
+}
+
 static int bluetooth_a2dp_init(struct bluetooth_data *data)
 {
 	sbc_capabilities_t *cap = &data->sbc_capabilities;
 	unsigned int max_bitpool, min_bitpool;
-	int dir;
+	int dir, def_bitpool;
 
 	switch (data->rate) {
 	case 48000:
@@ -451,10 +488,14 @@ static int bluetooth_a2dp_init(struct bluetooth_data *data)
 	else if (cap->allocation_method & BT_A2DP_ALLOCATION_SNR)
 		cap->allocation_method = BT_A2DP_ALLOCATION_SNR;
 
+		def_bitpool = (data->isEdrCapable) ?
+				high_quality_default_bitpool(cap->frequency,
+								 cap->channel_mode) :
+				medium_quality_default_bitpool(cap->frequency,
+								cap->channel_mode);
+
 		min_bitpool = MAX(MIN_BITPOOL, cap->min_bitpool);
-		max_bitpool = MIN(default_bitpool(cap->frequency,
-					cap->channel_mode),
-					cap->max_bitpool);
+		max_bitpool = MIN(def_bitpool, cap->max_bitpool);
 
 	cap->min_bitpool = min_bitpool;
 	cap->max_bitpool = max_bitpool;
@@ -915,6 +956,8 @@ static int bluetooth_parse_capabilities(struct bluetooth_data *data,
 		return -EINVAL;
 
 	memcpy(&data->sbc_capabilities, codec, codec->length);
+
+	data->isEdrCapable = rsp->isEdrCapable;
 	return 0;
 }
 

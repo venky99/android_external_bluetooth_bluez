@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2010-2012, Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -408,6 +409,53 @@ int read_remote_eir(bdaddr_t *local, bdaddr_t *peer, uint8_t *data)
 
 	free(str);
 
+	return 0;
+}
+
+int read_version_info(bdaddr_t *local, bdaddr_t *peer, uint16_t *lmp_ver)
+{
+	char filename[PATH_MAX + 1], addr[18], *str, *ver_str, *subver_str, *ver;
+	int len;
+
+	create_filename(filename, PATH_MAX, local, "manufacturers");
+
+	ba2str(peer, addr);
+
+	str = textfile_get(filename, addr);
+	if (!str)
+		return -ENOENT;
+
+	if (!lmp_ver) {
+		free(str);
+		return -ENOENT;
+	}
+
+	ver_str = strchr(str, ' ');
+	if (!ver_str) {
+		free(str);
+		return -ENOENT;
+	}
+	*(ver_str++) = 0;
+
+	subver_str = strchr(ver_str, ' ');
+	if (!subver_str) {
+		free(str);
+		return -ENOENT;
+	}
+	*(subver_str++) = 0;
+
+	len = subver_str-ver_str+1;
+
+	ver = g_malloc(len);
+
+	memcpy(ver, ver_str, len-1);
+	ver[len-1] = '\0';
+
+
+	if (lmp_ver)
+		*lmp_ver = (uint16_t) strtol(ver, NULL, 10);
+
+	free(ver);
 	return 0;
 }
 

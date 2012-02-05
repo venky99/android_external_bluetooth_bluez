@@ -3,6 +3,7 @@
  *  BlueZ - Bluetooth protocol stack for Linux
  *
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2010-2012, Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -42,6 +43,7 @@ int write_device_name(bdaddr_t *local, bdaddr_t *peer, char *name);
 int read_device_name(const char *src, const char *dst, char *name);
 int write_remote_eir(bdaddr_t *local, bdaddr_t *peer, uint8_t *data);
 int read_remote_eir(bdaddr_t *local, bdaddr_t *peer, uint8_t *data);
+int read_version_info(bdaddr_t *local, bdaddr_t *peer, uint16_t *version);
 int write_version_info(bdaddr_t *local, bdaddr_t *peer, uint16_t manufacturer, uint8_t lmp_ver, uint16_t lmp_subver);
 int write_features_info(bdaddr_t *local, bdaddr_t *peer, unsigned char *page1, unsigned char *page2);
 int read_remote_features(bdaddr_t *local, bdaddr_t *peer, unsigned char *page1, unsigned char *page2);
