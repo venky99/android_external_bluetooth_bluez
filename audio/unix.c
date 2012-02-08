@@ -57,6 +57,7 @@
 #include "storage.h"
 
 #define check_nul(str) (str[sizeof(str) - 1] == '\0')
+#define RESUME_TIMEOUT 500
 
 typedef enum {
 	TYPE_NONE,
@@ -93,6 +94,7 @@ struct unix_client {
 	int data_fd; /* To be deleted once two phase configuration is fully implemented */
 	unsigned int req_id;
 	unsigned int cb_id;
+	gboolean local_suspend;
 	gboolean (*cancel) (struct audio_device *dev, unsigned int id);
 };
 
@@ -224,6 +226,47 @@ static service_type_t select_service(struct audio_device *dev, const char *inter
 	return TYPE_NONE;
 }
 
+static void a2dp_local_resume_complete(struct avdtp *session,
+				struct avdtp_error *err, void *user_data)
+{
+	struct unix_client *client = user_data;
+	struct a2dp_data *a2dp = &client->d.a2dp;
+
+	if (!err)
+		return;
+
+	error("resume failed with err %d", err);
+	if (client->cb_id > 0) {
+		avdtp_stream_remove_cb(a2dp->session, a2dp->stream,
+					client->cb_id);
+		client->cb_id = 0;
+	}
+
+	if (a2dp->sep) {
+		a2dp_sep_unlock(a2dp->sep, a2dp->session);
+		a2dp->sep = NULL;
+	}
+
+	avdtp_unref(a2dp->session);
+	a2dp->session = NULL;
+	a2dp->stream = NULL;
+}
+
+static gboolean a2dp_local_resume(void *data)
+{
+	struct unix_client *client = data;
+	struct a2dp_data *a2dp = &client->d.a2dp;
+	DBG("a2dp_resume being called");
+
+	if (!a2dp)
+		return TRUE;
+
+	a2dp_resume(a2dp->session, a2dp->sep,
+				a2dp_local_resume_complete, client);
+
+	return FALSE;
+}
+
 static void stream_state_changed(struct avdtp_stream *stream,
 					avdtp_state_t old_state,
 					avdtp_state_t new_state,
@@ -233,6 +276,7 @@ static void stream_state_changed(struct avdtp_stream *stream,
 	struct unix_client *client = user_data;
 	struct a2dp_data *a2dp = &client->d.a2dp;
 
+	DBG("new state and old state are %d, %d", new_state, old_state);
 	switch (new_state) {
 	case AVDTP_STATE_IDLE:
 		if (a2dp->sep) {
@@ -246,6 +290,17 @@ static void stream_state_changed(struct avdtp_stream *stream,
 		a2dp->stream = NULL;
 		client->cb_id = 0;
 		break;
+	case AVDTP_STATE_OPEN:
+		DBG("new state and old state are %d, %d", new_state, old_state);
+		if ((old_state == AVDTP_STATE_STREAMING) &&
+		    (client->local_suspend == FALSE)) {
+			uint8_t match = 0;
+			read_special_map_devaddr("remote_suspend", &client->dev->dst, &match);
+			if (match) {
+				DBG("a2dp_resume being called as remote suspend triggered");
+				g_timeout_add(RESUME_TIMEOUT, a2dp_local_resume, client);
+			}
+		}
 	default:
 		break;
 	}
@@ -868,6 +923,7 @@ static void a2dp_suspend_complete(struct avdtp *session,
 	char buf[BT_SUGGESTED_BUFFER_SIZE];
 	struct bt_stop_stream_rsp *rsp = (void *) buf;
 
+	client->local_suspend = FALSE;
 	if (err)
 		goto failed;
 
@@ -1219,6 +1275,7 @@ static void start_suspend(struct audio_device *dev, struct unix_client *client)
 		id = a2dp_suspend(a2dp->session, a2dp->sep,
 					a2dp_suspend_complete, client);
 		client->cancel = a2dp_cancel;
+		client->local_suspend = TRUE;
 		break;
 
 	case TYPE_HEADSET:
