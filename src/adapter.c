@@ -2131,11 +2131,12 @@ static DBusMessage *remove_service_record(DBusConnection *conn,
 	return dbus_message_new_method_return(msg);
 }
 
-static int add_mas_record(struct btd_adapter* adapter, int channel_num, uint16_t masid, uint8_t sprtd_msg)
+static int add_mas_record(struct btd_adapter* adapter, int channel_num,
+		uint16_t masid, uint8_t sprtd_msg, const char *name)
 {
 	sdp_list_t *svclass_id, *pfseq, *apseq, *root;
 	uuid_t root_uuid, svclass_uuid, ga_svclass_uuid, l2cap_uuid;
-        uuid_t rfcomm_uuid, obex_uuid;
+	uuid_t rfcomm_uuid, obex_uuid;
 	sdp_profile_desc_t profile;
 	sdp_list_t *aproto, *proto[3];
 	sdp_record_t *record = NULL;
@@ -2171,9 +2172,9 @@ static int add_mas_record(struct btd_adapter* adapter, int channel_num, uint16_t
 	proto[1] = sdp_list_append(proto[1], channel);
 	apseq = sdp_list_append(apseq, proto[1]);
 
-        sdp_uuid16_create(&obex_uuid, OBEX_UUID);
-        proto[2] = sdp_list_append(0, &obex_uuid);
-        apseq = sdp_list_append(apseq, proto[2]);
+	sdp_uuid16_create(&obex_uuid, OBEX_UUID);
+	proto[2] = sdp_list_append(0, &obex_uuid);
+	apseq = sdp_list_append(apseq, proto[2]);
 
 	aproto = sdp_list_append(0, apseq);
 	sdp_set_access_protos(record, aproto);
@@ -2188,7 +2189,7 @@ static int add_mas_record(struct btd_adapter* adapter, int channel_num, uint16_t
 	        sdp_attr_add(record, SDP_ATTR_SUPPORTED_MESSAGE_TYPES, supported_msg);
 	}
 
-	sdp_set_info_attr(record, "OBEX Message Access", 0, 0);
+	sdp_set_info_attr(record, name, 0, 0);
 
 	if (add_record_to_server(&adapter->bdaddr, record) < 0)
 		ret = -1;
@@ -2206,12 +2207,12 @@ static int add_mas_record(struct btd_adapter* adapter, int channel_num, uint16_t
 
 static int add_mas0_record(struct btd_adapter* adapter)
 {
-	return add_mas_record(adapter, 16, 0, 0x0E);
+	return add_mas_record(adapter, 16, 0, 0x0E, "SMS/MMS Message Access");
 }
 
 static int add_mas1_record(struct btd_adapter* adapter)
 {
-	return add_mas_record(adapter, 17, 1, 0x01);
+	return add_mas_record(adapter, 17, 1, 0x01, "Email Message Access");
 }
 
 static int add_sim_access_record(struct btd_adapter* adapter)
