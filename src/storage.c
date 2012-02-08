@@ -52,6 +52,8 @@
 #include "storage.h"
 #include "log.h"
 
+#define IOT_SPECIAL_MAPPING_FILE "iop_device_list.conf"
+
 struct match {
 	GSList *keys;
 	char *pattern;
@@ -1808,4 +1810,91 @@ device_type_t read_device_type(const bdaddr_t *sba, const bdaddr_t *dba)
 	free(chars);
 
 	return type;
+}
+
+int read_special_map_devaddr(char *category, bdaddr_t *peer, uint8_t *match)
+{
+	char filename[PATH_MAX+1], addr[18], *str, *temp, *next_adrList;
+
+	ba2str(peer, addr);
+
+	if (!category || !match) {
+		DBG("category or match is NULL");
+		return -ENOENT;
+	}
+
+	snprintf(filename, PATH_MAX, "%s/%s", CONFIGDIR, IOT_SPECIAL_MAPPING_FILE);
+
+	str = textfile_get(filename, category);
+	if (!str) {
+		DBG("category %s is not available in iop file",category);
+		return -ENOENT;
+	}
+
+	*match = 0;
+	temp = str;
+
+	while (temp) {
+		if (strncasecmp(temp, addr, 8) == 0) {
+			DBG("match found");
+			*match = 1;
+			break;
+		}
+
+		next_adrList = strchr(temp, ';');
+		if (!next_adrList)
+			break;
+
+		temp = next_adrList + 1;
+	}
+	free(str);
+
+	return 0;
+}
+
+int read_special_map_devname(char *category, char *name, uint8_t *match)
+{
+	char filename[PATH_MAX+1], *str, *temp, *next_adrList;
+	int len;
+
+	if (!category || !match || !name) {
+		DBG("one of the input arguments is null");
+		return -ENOENT;
+	}
+
+	len = strlen(name);
+	if (!len) {
+		DBG("input name length is 0");
+		return -ENOENT;
+	}
+
+	snprintf(filename, PATH_MAX, "%s/%s", CONFIGDIR, IOT_SPECIAL_MAPPING_FILE);
+	str = textfile_get(filename, category);
+	if (!str) {
+		DBG("category %s is not available in iop file", category);
+		return -ENOENT;
+	}
+
+	*match = 0;
+	temp = str;
+
+	while (temp) {
+		if ((strlen(temp) >= len) &&
+			(strncasecmp(temp, name, len) == 0) &&
+			(temp[len] == ';' || temp[len] == '\0')) {
+			DBG("match exist");
+			*match = 1;
+			break;
+		}
+
+		next_adrList = strchr(temp, ';');
+		if (!next_adrList)
+			break;
+
+		temp = next_adrList + 1;
+	}
+
+	free(str);
+
+	return 0;
 }
