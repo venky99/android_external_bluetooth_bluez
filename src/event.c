@@ -4,7 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
- *
+ *  Copyright (C) 2011-2012, Code Aurora Forum. All rights reserved
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -710,8 +710,8 @@ proceed:
 	/* check if there is more devices to request names */
 	if (adapter_resolve_names(adapter) == 0)
 		return;
-
-	adapter_set_state(adapter, STATE_IDLE);
+	if (adapter_get_state(adapter) == STATE_RESOLVNAME)
+		adapter_set_state(adapter, STATE_IDLE);
 }
 
 int btd_event_link_key_notify(bdaddr_t *local, bdaddr_t *peer,
