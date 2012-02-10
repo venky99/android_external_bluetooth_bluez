@@ -2132,7 +2132,7 @@ unsigned int a2dp_config(struct avdtp *session, struct a2dp_sep *sep,
 	if (setup->caps != caps) {
 		g_slist_foreach(setup->caps, (GFunc) g_free, NULL);
 		g_slist_free(setup->caps);
-		setup->caps = g_slist_copy(caps);
+		g_slist_foreach(caps, copy_capabilities, &setup->caps);
 	}
 
 	switch (avdtp_sep_get_state(sep->lsep)) {

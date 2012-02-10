@@ -1095,13 +1095,18 @@ static void start_config(struct audio_device *dev, struct unix_client *client)
 	}
 
 	client->req_id = id;
-	g_slist_free(client->caps);
-	client->caps = NULL;
+	goto cleanup;
 
 	return;
 
 failed:
 	unix_ipc_error(client, BT_SET_CONFIGURATION, EIO);
+cleanup:
+	if (client->caps) {
+		g_slist_foreach(client->caps, (GFunc) g_free, NULL);
+		g_slist_free(client->caps);
+		client->caps = NULL;
+	}
 }
 
 static void start_resume(struct audio_device *dev, struct unix_client *client)
