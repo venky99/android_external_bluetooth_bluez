@@ -2977,6 +2977,88 @@ static void cmd_data(int dev_id, int argc, char **argv)
 	return;
 }
 
+static struct option spec_options[] = {
+	{ "help",	0, 0, 'h' },
+	{ 0, 0, 0, 0 }
+};
+
+static const char *spec_help =
+	"Usage:\n"
+	"\tdata <handle> <flags> <octet> <octet> ...\n"
+	"Example:\n"
+	"\tdata 0x101 0x3 0xAA 0xAA\n";
+
+static unsigned char spec_buf[HCI_MAX_ACL_SIZE];
+
+static void cmd_spec(int dev_id, int argc, char **argv)
+{
+	struct hci_filter flt;
+	int opt, dd;
+	uint16_t handle;
+	uint8_t flags;
+	uint16_t dlen;
+	int i;
+	uint8_t octet;
+
+	for_each_opt(opt, spec_options, NULL) {
+		switch (opt) {
+		default:
+			printf("%s", spec_help);
+			return;
+		}
+	}
+	helper_arg(3, -1, &argc, &argv, spec_help);
+
+	if (dev_id < 0)
+		dev_id = hci_get_route(NULL);
+
+	errno = 0;
+	handle = strtol(argv[0], NULL, 16);
+	flags = strtol(argv[1], NULL, 16);
+	if (errno == ERANGE || (handle > 0xeff) || (flags > 0xf)) {
+		printf("%s", cmd_help);
+		return;
+	}
+
+	i = 2;
+	dlen = 0;
+	while (i < argc) {
+		errno = 0;
+		octet = strtol(argv[i++], NULL, 16);
+		if (errno == ERANGE) {
+			printf("%s", cmd_help);
+			return;
+		}
+		spec_buf[dlen++] = octet;
+	}
+
+	dd = hci_open_dev(dev_id);
+	if (dd < 0) {
+		perror("Device open failed");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Setup filter */
+	hci_filter_clear(&flt);
+	hci_filter_set_ptype(HCI_EVENT_PKT, &flt);
+	hci_filter_all_events(&flt);
+	if (setsockopt(dd, SOL_HCI, HCI_FILTER, &flt, sizeof(flt)) < 0) {
+		perror("HCI filter setup failed");
+		exit(EXIT_FAILURE);
+	}
+
+	printf("< HCI Data: handle 0x%03x, flags 0x%x, dlen %d\n", handle, flags, dlen);
+	hex_dump("  ", 20, spec_buf, dlen); fflush(stdout);
+
+	if (hci_send_data(dd, handle, flags, dlen, spec_buf) < 0) {
+		perror("Send failed");
+		exit(EXIT_FAILURE);
+	}
+
+	hci_close_dev(dd);
+	return;
+}
+
 static struct {
 	char *cmd;
 	void (*func)(int dev_id, int argc, char **argv);
@@ -3015,6 +3097,7 @@ static struct {
 	{ "ledc",     cmd_ledc,    "Disconnect a LE Connection"           },
 	{ "lecup",    cmd_lecup,   "LE Connection Update"                 },
 	{ "data",     cmd_data,    "Send HCI data"                        },
+	{ "spec",     cmd_spec,    "Send specific HCI data"               },
 	{ NULL, NULL, 0 }
 };
 
