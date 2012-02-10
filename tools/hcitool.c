@@ -1191,6 +1191,134 @@ static void cmd_cmd(int dev_id, int argc, char **argv)
 	hci_close_dev(dd);
 }
 
+static const char *two_help =
+	"Usage:\n"
+	"\ttwo <parameters_cnt> <ogf> <ocf> [parameters] <ogf2> <ocf2> [parameters2]\n"
+	"Example:\n"
+	"\ttwo 3 0x03 0x0013 0xAA 0x0000BBCC 0xDDEE 0x03 0x003A 0x01\n";
+
+static void cmd_two(int dev_id, int argc, char **argv)
+{
+	unsigned char buf[HCI_MAX_EVENT_SIZE], *ptr = buf;
+	unsigned char buf2[HCI_MAX_EVENT_SIZE], *ptr2 = buf2;
+	struct hci_filter flt;
+	hci_event_hdr *hdr;
+	int i, j, opt, len, len2, dd;
+	uint8_t cnt;
+	uint16_t ocf;
+	uint8_t ogf;
+	uint16_t ocf2;
+	uint8_t ogf2;
+	unsigned long val32;
+
+	for_each_opt(opt, cmd_options, NULL) {
+		switch (opt) {
+		default:
+			printf("%s", two_help);
+			return;
+		}
+	}
+	helper_arg(3, -1, &argc, &argv, two_help);
+
+	if (dev_id < 0)
+		dev_id = hci_get_route(NULL);
+
+	errno = 0;
+	cnt = strtol(argv[0], NULL, 10);
+	ogf = strtol(argv[1], NULL, 16);
+	ocf = strtol(argv[2], NULL, 16);
+	if (errno == ERANGE || (ogf > 0x3f) || (ocf > 0x3ff)) {
+		printf("%s", two_help);
+		return;
+	}
+
+	/* Read in command parameters:
+	 * 0x** -> uint8, 0x**** -> uint16, otherwise uint32 */
+	for (i = 3, len = 0, j = 0; i < argc && len < (int) sizeof(buf) && j < cnt; i++, j++) {
+		unsigned long parm_len = strlen(argv[i]);
+		unsigned char *u8_ptr;
+		unsigned int k;
+
+		/* Sanity check */
+		if(parm_len < 2) {
+			perror("Incorrect command parameter, should be a hex number\n");
+			exit(EXIT_FAILURE);
+		}
+		val32 = strtol(argv[i], NULL, 16);
+		parm_len -= 2; /* skip 0x */
+		val32 = htobl(val32);
+		u8_ptr = (unsigned char *) &val32;
+
+		parm_len = (parm_len <= 2) ? 1 : ((parm_len <= 4) ? 2: 4);
+		for (k = 0; k < parm_len; k++) {
+			*ptr++ = u8_ptr[k];
+			len++;
+		}
+	}
+
+	errno = 0;
+	ogf2 = strtol(argv[i++], NULL, 16);
+	ocf2 = strtol(argv[i++], NULL, 16);
+	if (errno == ERANGE || (ogf2 > 0x3f) || (ocf2 > 0x3ff)) {
+		printf("%s", two_help);
+		return;
+	}
+
+	for (len2 = 0; i < argc && len2 < (int) sizeof(buf2); i++) {
+		unsigned long parm_len = strlen(argv[i]);
+		unsigned char *u8_ptr;
+		unsigned int k;
+
+		/* Sanity check */
+		if(parm_len < 2) {
+			perror("Incorrect command parameter, should be a hex number\n");
+			exit(EXIT_FAILURE);
+		}
+		val32 = strtol(argv[i], NULL, 16);
+		parm_len -= 2; /* skip 0x */
+		val32 = htobl(val32);
+		u8_ptr = (unsigned char *) &val32;
+
+		parm_len = (parm_len <= 2) ? 1 : ((parm_len <= 4) ? 2: 4);
+		for (k = 0; k < parm_len; k++) {
+			*ptr2++ = u8_ptr[k];
+			len2++;
+		}
+	}
+
+	dd = hci_open_dev(dev_id);
+	if (dd < 0) {
+		perror("Device open failed");
+		exit(EXIT_FAILURE);
+	}
+
+	/* Setup filter */
+	hci_filter_clear(&flt);
+	hci_filter_set_ptype(HCI_EVENT_PKT, &flt);
+	hci_filter_all_events(&flt);
+	if (setsockopt(dd, SOL_HCI, HCI_FILTER, &flt, sizeof(flt)) < 0) {
+		perror("HCI filter setup failed");
+		exit(EXIT_FAILURE);
+	}
+
+	printf("< HCI Command: ogf 0x%02x, ocf 0x%04x, plen %d\n", ogf, ocf, len);
+	hex_dump("  ", 20, buf, len); fflush(stdout);
+	printf("< HCI Command: ogf 0x%02x, ocf 0x%04x, plen %d\n", ogf2, ocf2, len2);
+	hex_dump("  ", 20, buf2, len2); fflush(stdout);
+
+	if (hci_send_cmd(dd, ogf, ocf, len, buf) < 0) {
+		perror("Send failed");
+		exit(EXIT_FAILURE);
+	}
+
+	if (hci_send_cmd(dd, ogf2, ocf2, len2, buf2) < 0) {
+		perror("Send2 failed");
+		exit(EXIT_FAILURE);
+	}
+
+	hci_close_dev(dd);
+}
+
 /* Display active connections */
 
 static struct option con_options[] = {
@@ -3072,6 +3200,7 @@ static struct {
 	{ "spinq",    cmd_spinq,   "Start periodic inquiry"               },
 	{ "epinq",    cmd_epinq,   "Exit periodic inquiry"                },
 	{ "cmd",      cmd_cmd,     "Submit arbitrary HCI commands"        },
+	{ "two",      cmd_two,     "Submit two arbitrary HCI commands"    },
 	{ "con",      cmd_con,     "Display active connections"           },
 	{ "cc",       cmd_cc,      "Create connection to remote device"   },
 	{ "dc",       cmd_dc,      "Disconnect from remote device"        },
