@@ -1093,7 +1093,7 @@ int hci_send_data(int dd, uint16_t handle, uint8_t flags, uint16_t dlen, void *d
 	iv[0].iov_base = &type;
 	iv[0].iov_len  = 1;
 	iv[1].iov_base = &hd;
-	iv[1].iov_len  = HCI_COMMAND_HDR_SIZE;
+	iv[1].iov_len  = HCI_ACL_HDR_SIZE;
 	ivn = 2;
 
 	if (dlen) {
