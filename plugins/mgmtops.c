@@ -458,6 +458,10 @@ static void mgmt_new_key(int sk, uint16_t index, void *buf, size_t len)
 						ev->key.val, ev->key.key_type,
 						ev->key.pin_len, ev->key.auth,
 						ev->key.dlen, ev->key.data);
+	else {
+		DBG("Link key is not stored, set device as temporary");
+		btd_event_device_set_temporary(&info->bdaddr, &ev->key.bdaddr);
+	}
 
 	btd_event_bonding_complete(&info->bdaddr, &ev->key.bdaddr, 0);
 }
