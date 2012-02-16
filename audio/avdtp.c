@@ -3471,7 +3471,7 @@ int avdtp_get_configuration(struct avdtp *session, struct avdtp_stream *stream)
 							&req, sizeof(req));
 }
 
-static void copy_capabilities(gpointer data, gpointer user_data)
+void copy_capabilities(gpointer data, gpointer user_data)
 {
 	struct avdtp_service_capability *src_cap = data;
 	struct avdtp_service_capability *dst_cap;
