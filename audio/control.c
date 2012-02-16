@@ -759,7 +759,7 @@ static gboolean control_cb(GIOChannel *chan, GIOCondition cond,
 				packet_size = packet_size + 4;
 			} else if (params->capability_id == CAP_EVENTS_SUPPORTED_ID) {
 				avrcp->code = CTYPE_STABLE;
-				params->param_len = htons(6);
+				params->param_len = htons(4);
 				operands[0] = 0x2; // Capability Count
 				operands[1] = EVENT_PLAYBACK_STATUS_CHANGED;
 				operands[2] = EVENT_TRACK_CHANGED;
