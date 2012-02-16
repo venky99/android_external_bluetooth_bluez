@@ -70,6 +70,7 @@ struct audio_device {
 	guint hs_preauth_id;
 
 	struct dev_priv *priv;
+	int uinput;
 };
 
 struct audio_device *audio_device_register(DBusConnection *conn,

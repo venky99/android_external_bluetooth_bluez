@@ -1235,6 +1235,11 @@ static void init_uinput(struct control *control)
 	if (!uinput_dev_name)
 		uinput_dev_name = address;
 
+	if (dev->uinput >= 0) {
+		ioctl(dev->uinput, UI_DEV_DESTROY);
+		close(dev->uinput);
+		dev->uinput = -1;
+	}
 	control->uinput = uinput_create(uinput_dev_name);
 	if (control->uinput < 0)
 		error("AVRCP: failed to init uinput for %s", address);
@@ -2466,19 +2471,36 @@ void control_update(struct audio_device *dev, uint16_t uuid16)
 void control_suspend(struct audio_device *dev)
 {
 	struct control *control = dev->control;
-	if (!control)
-		return;
-	handle_key_op(control, PAUSE_OP, 1);
-	handle_key_op(control, PAUSE_OP, 0);
+	if (!control) {
+		if (dev->uinput < 0)
+			dev->uinput	= uinput_create("AVRCP");
+
+		if (dev->uinput >= 0) {
+			DBG("sending key event for suspend");
+			send_key(dev->uinput, KEY_PAUSECD, 1);
+			send_key(dev->uinput, KEY_PAUSECD, 0);
+		}
+	} else {
+		handle_key_op(control, PAUSE_OP, 1);
+		handle_key_op(control, PAUSE_OP, 0);
+	}
 }
 
 void control_resume(struct audio_device *dev)
 {
 	struct control *control = dev->control;
-	if (!control)
-		return;
-	handle_key_op(control, PLAY_OP, 1);
-	handle_key_op(control, PLAY_OP, 0);
+	if (!control) {
+		if (dev->uinput < 0)
+			dev->uinput	= uinput_create("AVRCP");
+
+		if (dev->uinput >= 0) {
+			send_key(dev->uinput, KEY_PLAYCD, 1);
+			send_key(dev->uinput, KEY_PLAYCD, 0);
+		}
+	} else {
+		handle_key_op(control, PLAY_OP, 1);
+		handle_key_op(control, PLAY_OP, 0);
+	}
 }
 static void init_player_settings(struct control *control)
 {

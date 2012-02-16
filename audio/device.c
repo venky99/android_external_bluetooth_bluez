@@ -42,6 +42,7 @@
 #include <gdbus.h>
 
 #include "log.h"
+#include "uinput.h"
 #include "textfile.h"
 #include "../src/adapter.h"
 #include "../src/device.h"
@@ -110,6 +111,11 @@ static void device_free(struct audio_device *dev)
 		dbus_connection_unref(dev->conn);
 
 	btd_device_unref(dev->btd_dev);
+	if (dev->uinput >= 0) {
+		ioctl(dev->uinput, UI_DEV_DESTROY);
+		close(dev->uinput);
+		dev->uinput = -1;
+	}
 
 	if (priv) {
 		if (priv->auths)
@@ -679,6 +685,7 @@ struct audio_device *audio_device_register(DBusConnection *conn,
 		headset_callback_id = headset_add_state_cb(device_headset_cb,
 									NULL);
 
+	dev->uinput = -1;
 	return dev;
 }
 
