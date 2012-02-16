@@ -4,7 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
- *
+ *  Copyright (C) 2012, Code Aurora Forum. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -229,8 +229,11 @@ static void handle_uuid(const char *uuidstr, struct audio_device *device)
 			control_update(device, uuid16);
 		else
 			device->control = control_init(device, uuid16);
+		/* this should be for incoming connection, so posting delayed
+		 * connect on avrcp for all devices.
+		 */
 		if (device->sink && sink_is_active(device))
-			avrcp_connect(device);
+			audio_device_set_control_timer(device);
 		break;
 	default:
 		DBG("Unrecognized UUID: 0x%04X", uuid16);
