@@ -825,8 +825,10 @@ static int audioservice_send(struct bluetooth_data *data,
 		err = -errno;
 		ERR("Error sending data to audio service: %s(%d)",
 			strerror(errno), errno);
-		if (err == -EPIPE)
+		if (err == -EPIPE || err == -ECONNRESET) {
+			data->server.fd = -1;
 			bluetooth_close(data);
+		}
 	}
 
 	return err;
@@ -846,8 +848,10 @@ static int audioservice_recv(struct bluetooth_data *data,
 		err = -errno;
 		ERR("Error receiving IPC data from bluetoothd: %s (%d)",
 						strerror(errno), errno);
-		if (err == -EPIPE)
+		if (err == -EPIPE || err == -ECONNRESET) {
+			data->server.fd = -1;
 			bluetooth_close(data);
+		}
 	} else if ((size_t) ret < sizeof(bt_audio_msg_header_t)) {
 		ERR("Too short (%d bytes) IPC packet from bluetoothd", ret);
 		err = -EINVAL;
