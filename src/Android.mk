@@ -67,6 +67,7 @@ LOCAL_SHARED_LIBRARIES := \
 	libbtio \
 	libdbus \
 	libcutils \
+	libutils \
 	libglib \
 
 LOCAL_STATIC_LIBRARIES := \
