@@ -1630,15 +1630,14 @@ static void mgmt_remote_version(int sk, uint16_t index, void *buf, size_t len)
 	struct mgmt_ev_remote_version *ev = buf;
 	struct controller_info *info;
 	char addr[18];
-	uint32_t class;
 
 	if (len < sizeof(*ev)) {
-		error("Too small mgmt_remote_class packet");
+		error("Too small mgmt_remote_version packet");
 		return;
 	}
 
 	if (index > max_index) {
-		error("Unexpected index %u in remote_class event", index);
+		error("Unexpected index %u in remote_version event", index);
 		return;
 	}
 
@@ -1649,6 +1648,26 @@ static void mgmt_remote_version(int sk, uint16_t index, void *buf, size_t len)
 	write_version_info(&info->bdaddr, &ev->bdaddr,
 					btohs(ev->manufacturer), ev->lmp_ver,
 					btohs(ev->lmp_subver));
+}
+
+static void mgmt_remote_features(int sk, uint16_t index, void *buf, size_t len)
+{
+	struct mgmt_ev_remote_features *ev = buf;
+	struct controller_info *info;
+
+	if (len < sizeof(*ev)) {
+		error("Too small mgmt_remote_features packet");
+		return;
+	}
+
+	if (index > max_index) {
+		error("Unexpected index %u in remote_features event", index);
+		return;
+	}
+
+	info = &controllers[index];
+
+	write_features_info(&info->bdaddr, &ev->bdaddr, ev->features, NULL);
 }
 
 static gboolean mgmt_event(GIOChannel *io, GIOCondition cond, gpointer user_data)
@@ -1768,6 +1787,9 @@ static gboolean mgmt_event(GIOChannel *io, GIOCondition cond, gpointer user_data
 		break;
 	case MGMT_EV_REMOTE_VERSION:
 		mgmt_remote_version(sk, index, buf + MGMT_HDR_SIZE, len);
+		break;
+	case MGMT_EV_REMOTE_FEATURES:
+		mgmt_remote_features(sk, index, buf + MGMT_HDR_SIZE, len);
 		break;
 	default:
 		error("Unknown Management opcode %u (index %u)", opcode, index);

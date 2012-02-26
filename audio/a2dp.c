@@ -4,7 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
- *  Copyright (C) 2010, Code Aurora Forum. All rights reserved.
+ *  Copyright (C) 2010,2012 Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -67,6 +67,16 @@
 # define MAX(x, y) ((x) > (y) ? (x) : (y))
 #endif
 
+#define EDR_ACL_2_MBPS_MASK 0x02
+#define EDR_ACL_3_MBPS_MASK 0x04
+#define _3_SLOT_EDR_ACL_MASK 0x80
+#define _5_SLOT_EDR_ACL_MASK 0x01
+
+#define EDR_ACL_2_MBPS_BYTE 0x03
+#define EDR_ACL_3_MBPS_BYTE 0x03
+#define _3_SLOT_EDR_ACL_BYTE 0x04
+#define _5_SLOT_EDR_ACL_BYTE 0x05
+
 struct a2dp_sep {
 	struct a2dp_server *server;
 	struct media_endpoint *endpoint;
@@ -120,6 +130,7 @@ struct a2dp_server {
 	uint16_t version;
 	gboolean sink_enabled;
 	gboolean source_enabled;
+	gboolean sbc_quality_high;
 };
 
 static GSList *servers = NULL;
@@ -1453,7 +1464,7 @@ int a2dp_register(DBusConnection *conn, const bdaddr_t *src, GKeyFile *config)
 	int sbc_srcs = 1, sbc_sinks = 1;
 	int mpeg12_srcs = 0, mpeg12_sinks = 0;
 	gboolean source = TRUE, sink = FALSE, socket = TRUE;
-	gboolean delay_reporting = FALSE;
+	gboolean delay_reporting = FALSE, sbc_quality = TRUE;
 	char *str;
 	GError *err = NULL;
 	int i;
@@ -1535,6 +1546,19 @@ int a2dp_register(DBusConnection *conn, const bdaddr_t *src, GKeyFile *config)
 		g_free(str);
 	}
 
+	str = g_key_file_get_string(config, "A2DP", "SBCQuality", &err);
+	if (err) {
+		DBG("audio.conf: %s", err->message);
+		g_clear_error(&err);
+	} else {
+		if (g_strcmp0(str, "MEDIUM") == 0) {
+			DBG("explict medium setting used");
+			sbc_quality = FALSE;
+		}
+
+		g_free(str);
+	}
+
 proceed:
 	if (!connection)
 		connection = dbus_connection_ref(conn);
@@ -1588,6 +1612,8 @@ proceed:
 					A2DP_CODEC_MPEG12, delay_reporting,
 					NULL, NULL);
 	}
+
+	server->sbc_quality_high = sbc_quality;
 
 	return 0;
 }
@@ -1792,7 +1818,7 @@ struct a2dp_sep *a2dp_get(struct avdtp *session,
 	return NULL;
 }
 
-static uint8_t default_bitpool(uint8_t freq, uint8_t mode)
+static uint8_t high_quality_default_bitpool(uint8_t freq, uint8_t mode)
 {
 	switch (freq) {
 	case SBC_SAMPLING_FREQ_16000:
@@ -1828,10 +1854,47 @@ static uint8_t default_bitpool(uint8_t freq, uint8_t mode)
 	}
 }
 
-static gboolean select_sbc_params(struct sbc_codec_cap *cap,
-					struct sbc_codec_cap *supported)
+static uint8_t medium_quality_default_bitpool(uint8_t freq, uint8_t mode)
 {
-	unsigned int max_bitpool, min_bitpool;
+	switch (freq) {
+	case SBC_SAMPLING_FREQ_16000:
+	case SBC_SAMPLING_FREQ_32000:
+		return 35;
+	case SBC_SAMPLING_FREQ_44100:
+		switch (mode) {
+		case SBC_CHANNEL_MODE_MONO:
+		case SBC_CHANNEL_MODE_DUAL_CHANNEL:
+			return 19;
+		case SBC_CHANNEL_MODE_STEREO:
+		case SBC_CHANNEL_MODE_JOINT_STEREO:
+			return 35;
+		default:
+			error("Invalid channel mode %u", mode);
+			return 35;
+		}
+	case SBC_SAMPLING_FREQ_48000:
+		switch (mode) {
+		case SBC_CHANNEL_MODE_MONO:
+		case SBC_CHANNEL_MODE_DUAL_CHANNEL:
+			return 18;
+		case SBC_CHANNEL_MODE_STEREO:
+		case SBC_CHANNEL_MODE_JOINT_STEREO:
+			return 33;
+		default:
+			error("Invalid channel mode %u", mode);
+			return 33;
+		}
+	default:
+		error("Invalid sampling freq %u", freq);
+		return 35;
+	}
+}
+
+static gboolean select_sbc_params(struct sbc_codec_cap *cap,
+					struct sbc_codec_cap *supported,
+					gboolean edr_capability)
+{
+	unsigned int max_bitpool, min_bitpool, def_bitpool;
 
 	memset(cap, 0, sizeof(struct sbc_codec_cap));
 
@@ -1892,8 +1955,14 @@ static gboolean select_sbc_params(struct sbc_codec_cap *cap,
 		cap->allocation_method = SBC_ALLOCATION_SNR;
 
 	min_bitpool = MAX(MIN_BITPOOL, supported->min_bitpool);
-	max_bitpool = MIN(default_bitpool(cap->frequency, cap->channel_mode),
-							supported->max_bitpool);
+
+	def_bitpool = (edr_capability) ?
+				high_quality_default_bitpool(cap->frequency,
+								cap->channel_mode) :
+				medium_quality_default_bitpool(cap->frequency,
+								cap->channel_mode);
+
+	max_bitpool = MIN(def_bitpool, supported->max_bitpool);
 
 	cap->min_bitpool = min_bitpool;
 	cap->max_bitpool = max_bitpool;
@@ -1907,12 +1976,18 @@ static gboolean select_capabilities(struct avdtp *session,
 {
 	struct avdtp_service_capability *media_transport, *media_codec;
 	struct sbc_codec_cap sbc_cap;
+	bdaddr_t src, dst;
+	gboolean edr_capability;
 
 	media_codec = avdtp_get_codec(rsep);
 	if (!media_codec)
 		return FALSE;
 
-	select_sbc_params(&sbc_cap, (struct sbc_codec_cap *) media_codec->data);
+	avdtp_get_peers(session, &src, &dst);
+	edr_capability = a2dp_read_edrcapability(&src, &dst);
+
+	select_sbc_params(&sbc_cap, (struct sbc_codec_cap *) media_codec->data,
+						edr_capability);
 
 	media_transport = avdtp_service_cap_new(AVDTP_MEDIA_TRANSPORT,
 						NULL, 0);
@@ -2455,4 +2530,38 @@ gboolean a2dp_is_reconfig(struct avdtp *session)
 	is_reconfig = setup->reconfigure;
 	setup_unref(setup);
 	return is_reconfig ;
+}
+
+gboolean a2dp_read_edrcapability(bdaddr_t *src, bdaddr_t *dst)
+{
+	uint16_t version;
+	uint8_t remote_features[8];
+	struct a2dp_server *server;
+
+	if (!src || !dst)
+		return FALSE;
+
+	server = find_server(servers, src);
+
+	if (!server || (FALSE == server->sbc_quality_high)) {
+		return FALSE;
+	}
+
+	read_version_info(src, dst, &version);
+
+	DBG("remote device version is %d", version);
+	if (version < 3)
+		return FALSE;
+	else {
+		read_remote_features(src, dst, &remote_features[0], NULL);
+		// If any ACL EDR bit is set, remote device supports EDR rates over A2DP
+		if ((remote_features[EDR_ACL_2_MBPS_BYTE] & EDR_ACL_2_MBPS_MASK) ||
+			(remote_features[EDR_ACL_3_MBPS_BYTE] & EDR_ACL_3_MBPS_MASK) ||
+			(remote_features[_3_SLOT_EDR_ACL_BYTE] & _3_SLOT_EDR_ACL_MASK) ||
+			(remote_features[_5_SLOT_EDR_ACL_BYTE] & _5_SLOT_EDR_ACL_MASK) ) {
+			return TRUE;
+		} else
+			return FALSE;
+	}
+	return FALSE;
 }

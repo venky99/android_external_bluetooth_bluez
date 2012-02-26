@@ -704,7 +704,6 @@ static void a2dp_discovery_complete(struct avdtp *session, GSList *seps,
 	char buf[BT_SUGGESTED_BUFFER_SIZE];
 	struct bt_get_capabilities_rsp *rsp = (void *) buf;
 	struct a2dp_data *a2dp;
-	uint16_t version;
 
 	if (!g_slist_find(clients, client)) {
 		DBG("Client disconnected during discovery");
@@ -773,15 +772,9 @@ static void a2dp_discovery_complete(struct avdtp *session, GSList *seps,
 		a2dp_append_codec(rsp, cap, seid, type, configured, lock);
 	}
 
-
-	read_version_info(&client->dev->src, &client->dev->dst, &version);
-
-	DBG("remote device version is %d", version);
-
-	if (version < 3)
-		rsp->isEdrCapable = FALSE;
-	else
-		rsp->isEdrCapable = TRUE;
+	rsp->isEdrCapable = a2dp_read_edrcapability(&client->dev->src,
+							&client->dev->dst);
+	DBG("EdrCapable, %d", rsp->isEdrCapable);
 
 	unix_ipc_sendmsg(client, &rsp->h);
 

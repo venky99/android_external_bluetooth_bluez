@@ -359,3 +359,9 @@ struct mgmt_ev_remote_version {
 	uint16_t manufacturer;
 	uint8_t lmp_subver;
 } __packed;
+
+#define MGMT_EV_REMOTE_FEATURES		0x0019
+struct mgmt_ev_remote_features {
+	bdaddr_t bdaddr;
+	uint8_t features[8];
+} __packed;
