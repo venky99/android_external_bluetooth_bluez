@@ -225,6 +225,8 @@ static void stream_state_changed(struct avdtp_stream *stream,
 		}
 		sink->stream = NULL;
 		sink->cb_id = 0;
+		/*update as there is no streaming device*/
+		update_streaming_device(dev->btd_dev ,FALSE);
 		break;
 	case AVDTP_STATE_OPEN:
 		if (old_state == AVDTP_STATE_CONFIGURED &&
@@ -250,6 +252,8 @@ static void stream_state_changed(struct avdtp_stream *stream,
 						DBUS_TYPE_BOOLEAN, &value);
 		}
 		sink_set_state(dev, SINK_STATE_CONNECTED);
+		/*update as there is no streaming device*/
+		update_streaming_device(dev->btd_dev, FALSE);
 		break;
 	case AVDTP_STATE_STREAMING:
 		value = TRUE;
@@ -259,6 +263,8 @@ static void stream_state_changed(struct avdtp_stream *stream,
 					AUDIO_SINK_INTERFACE, "Playing",
 					DBUS_TYPE_BOOLEAN, &value);
 		sink_set_state(dev, SINK_STATE_PLAYING);
+		/*update the steaming device to adapter*/
+		update_streaming_device(dev->btd_dev, TRUE);
 		break;
 	case AVDTP_STATE_CLOSING:
 		if (old_state == AVDTP_STATE_STREAMING) {
@@ -278,6 +284,7 @@ static void stream_state_changed(struct avdtp_stream *stream,
 	case AVDTP_STATE_CONFIGURED:
 	case AVDTP_STATE_ABORTING:
 	default:
+		update_streaming_device(dev->btd_dev, FALSE);
 		break;
 	}
 

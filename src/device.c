@@ -262,6 +262,11 @@ static void device_free(gpointer user_data)
 	g_free(device);
 }
 
+bdaddr_t *get_bdaddr(struct btd_device *device)
+{
+	return &device->bdaddr;
+}
+
 gboolean device_is_paired(struct btd_device *device)
 {
 	return device->paired;

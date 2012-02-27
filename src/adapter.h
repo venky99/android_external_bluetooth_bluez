@@ -297,3 +297,8 @@ int btd_adapter_remove_remote_oob_data(struct btd_adapter *adapter,
 int btd_adapter_set_connection_params(struct btd_adapter *adapter,
 		bdaddr_t *bdaddr, uint16_t interval_min, uint16_t interval_max,
 		uint16_t slave_latency, uint16_t timeout_multiplier);
+
+/* Used from the audio plug-in to update the streaming device
+ * This is information is used to enforce the master role to
+ * avoid audio choppy behaviour in case of A2DP + Scan case. */
+void update_streaming_device(struct btd_device *dev, gboolean streaming);
