@@ -927,20 +927,28 @@ static DBusMessage *set_connection_params(DBusConnection *conn,
 						void *user_data)
 {
 	struct btd_device *device = user_data;
-	uint16_t interval_min, interval_max, slave_latency, timeout_multiplier;
+	struct bt_le_params params;
+	bdaddr_t src;
 	int ret;
 
-	if (dbus_message_get_args(msg, NULL, DBUS_TYPE_UINT16, &interval_min,
-					DBUS_TYPE_UINT16, &interval_max,
-					DBUS_TYPE_UINT16, &slave_latency,
-					DBUS_TYPE_UINT16, &timeout_multiplier,
-					DBUS_TYPE_INVALID) == FALSE)
+	if (dbus_message_get_args(msg, NULL,
+			DBUS_TYPE_BYTE, &params.prohibit_remote_chg,
+			DBUS_TYPE_BYTE, &params.filter_policy,
+			DBUS_TYPE_UINT16, &params.scan_interval,
+			DBUS_TYPE_UINT16, &params.scan_window,
+			DBUS_TYPE_UINT16, &params.interval_min,
+			DBUS_TYPE_UINT16, &params.interval_max,
+			DBUS_TYPE_UINT16, &params.latency,
+			DBUS_TYPE_UINT16, &params.supervision_timeout,
+			DBUS_TYPE_UINT16, &params.min_ce_len,
+			DBUS_TYPE_UINT16, &params.max_ce_len,
+			DBUS_TYPE_UINT16, &params.conn_timeout,
+			DBUS_TYPE_INVALID) == FALSE)
 		goto fail;
 
-	ret = btd_adapter_set_connection_params(device->adapter,
-					&device->bdaddr,
-					interval_min, interval_max,
-					slave_latency, timeout_multiplier);
+	adapter_get_address(device->adapter, &src);
+
+	ret = write_le_params(&src, &device->bdaddr, &params);
 
 	if (ret)
 		goto fail;
@@ -948,7 +956,38 @@ static DBusMessage *set_connection_params(DBusConnection *conn,
 	return dbus_message_new_method_return(msg);
 fail:
 	return g_dbus_create_error(msg, ERROR_INTERFACE ".Failed",
-					"SetConnectionParams Failed");
+					"SetLEConnectParams Failed");
+}
+
+static DBusMessage *update_connection_params(DBusConnection *conn,
+						DBusMessage *msg,
+						void *user_data)
+{
+	struct btd_device *device = user_data;
+	uint8_t prohibit_remote_chg;
+	uint16_t interval_min, interval_max, latency, supervision_timeout;
+	int ret;
+
+	if (dbus_message_get_args(msg, NULL,
+					DBUS_TYPE_BYTE, &prohibit_remote_chg,
+					DBUS_TYPE_UINT16, &interval_min,
+					DBUS_TYPE_UINT16, &interval_max,
+					DBUS_TYPE_UINT16, &latency,
+					DBUS_TYPE_UINT16, &supervision_timeout,
+					DBUS_TYPE_INVALID) == FALSE)
+		goto fail;
+
+	ret = attrib_client_update(device, prohibit_remote_chg,
+					interval_min, interval_max,
+					latency, supervision_timeout);
+
+	if (ret)
+		goto fail;
+
+	return dbus_message_new_method_return(msg);
+fail:
+	return g_dbus_create_error(msg, ERROR_INTERFACE ".Failed",
+					"UpdateLEConnectionParams Failed");
 }
 
 static DBusMessage *register_rssi_watcher(DBusConnection *conn,
@@ -1063,9 +1102,10 @@ static GDBusMethodTable device_methods[] = {
 	{ "Disconnect",		"",	"",		disconnect,
 						G_DBUS_METHOD_FLAG_ASYNC},
 	{ "GetServiceAttributeValue",  "sq", "i",       get_service_attribute_value},
-	{ "SetConnectionParams",	"qqqq",	"",	set_connection_params	},
 	{ "RegisterRssiUpdateWatcher",	"nqb",	"",	register_rssi_watcher	},
 	{ "UnregisterRssiUpdateWatcher",	"",	"",	unregister_rssi_watcher	},
+	{ "SetLEConnectParams",	"yyqqqqqqqqq", "", set_connection_params },
+	{ "UpdateLEConnectionParams",	"yqqqq", "", update_connection_params },
 	{ }
 };
 
