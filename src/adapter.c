@@ -4,7 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
- *  Copyright (C) 2010,2011 Code Aurora Forum. All rights reserved
+ *  Copyright (C) 2010-2012 Code Aurora Forum. All rights reserved
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -830,7 +830,6 @@ static void stop_discovery(struct btd_adapter *adapter, uint8_t adapter_stop)
 	if (adapter->scheduler_id) {
 		g_source_remove(adapter->scheduler_id);
 		adapter->scheduler_id = 0;
-		return;
 	}
 
 	if (adapter_stop)
