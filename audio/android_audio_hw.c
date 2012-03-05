@@ -779,6 +779,14 @@ static int adev_set_parameters(struct audio_hw_device *dev, const char *kvpairs)
             _out_a2dp_suspend(adev->output, adev->suspended);
     }
 
+    ret = str_parms_get_str(parms, "scmst_cp_header", value, sizeof(value));
+    if (ret >= 0) {
+        int intVal = atoi(value);
+        if ((NULL != adev->output) && (NULL != adev->output->data)) {
+            a2dp_set_cp_header( adev->output->data, (uint8_t)intVal);
+        }
+    }
+
     pthread_mutex_unlock(&adev->lock);
 
     str_parms_destroy(parms);
