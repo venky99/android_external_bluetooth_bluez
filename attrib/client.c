@@ -838,9 +838,10 @@ static DBusMessage *set_value(DBusConnection *conn, DBusMessage *msg,
 
 	if (isRequest)
 		return NULL;
-	else
+	else {
+		g_attrib_unref(gatt->attrib);
 		return dbus_message_new_method_return(msg);
-
+	}
 }
 
 static DBusMessage *set_cli_conf(DBusConnection *conn, DBusMessage *msg,
