@@ -1370,23 +1370,11 @@ static DBusMessage *adapter_list_connection(DBusConnection *conn,
 	int32_t nconn=0;
 	GSList *l, *conns;
 
-	err = adapter_ops->get_conn_list(adapter->dev_id, &conns);
-	if (err < 0) {
-		error("Unable to fetch existing connections: %s (%d)",
-				strerror(-err), -err);
-		nconn = -1;
-		goto done;
-	}
+	if (adapter->connections != NULL)
+	    nconn = g_slist_length(adapter->connections);
 
-	for (l = conns; l != NULL; l = g_slist_next(l)) {
-		++nconn;
-		DBG("Number of Connections = %d",nconn);
-	}
+	DBG("nconn value is %d",nconn);
 
-	g_slist_foreach(conns, (GFunc) g_free, NULL);
-	g_slist_free(conns);
-
-done:
 	reply = dbus_message_new_method_return(msg);
 	dbus_message_append_args(reply,
 			DBUS_TYPE_INT32, &nconn,
@@ -1394,6 +1382,30 @@ done:
 
 	return reply;
 }
+
+static DBusMessage *adapter_disconnect_all_connections (DBusConnection *conn,
+						DBusMessage *msg,  void *user_data) {
+	struct btd_adapter *adapter = user_data;
+	DBusMessage *reply;
+	int err;
+	GSList *l;
+
+	DBG("entered disconnect all connections ");
+	l = adapter->connections;
+	while (l) {
+		struct btd_device *device = l->data;
+		bdaddr_t dst;
+		l = l->next;
+		if (device) {
+			DBG("Found device");
+			device_get_address(device, &dst);
+			btd_adapter_disconnect_device(adapter, &dst);
+		}
+	}
+
+	return dbus_message_new_method_return(msg);
+}
+
 static DBusMessage *adapter_start_discovery(DBusConnection *conn,
 						DBusMessage *msg, void *data)
 {
@@ -3008,6 +3020,7 @@ static GDBusMethodTable adapter_methods[] = {
 	{ "SetLinkTimeout",	"ou",	"",	set_link_timeout	},
 	{ "AddReservedServiceRecords",   "au",    "au",    add_reserved_service_records  },
 	{ "RemoveReservedServiceRecords", "au",    "",	remove_reserved_service_records  },
+	{ "DisconnectAllConnections", "",    "",	adapter_disconnect_all_connections  },
 	{ }
 };
 
