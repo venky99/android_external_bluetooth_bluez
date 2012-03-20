@@ -91,7 +91,7 @@ struct network_session {
 	bdaddr_t	dst;		/* Remote Bluetooth Address */
 	GIOChannel	*io;		/* Pending connect channel */
 	guint		watch;		/* BNEP socket watch */
-        guint           io_watch;
+	guint		io_watch;
 };
 
 struct network_adapter {
@@ -369,6 +369,8 @@ static void bnep_watchdog_cb(GIOChannel *chan, GIOCondition cond,
 				ns->iface, "DeviceDisconnected",
 				DBUS_TYPE_STRING, &paddr,
 				DBUS_TYPE_INVALID);
+
+	ns->sessions = g_slist_remove(ns->sessions, session);
 	g_io_channel_shutdown(chan, TRUE, NULL);
 	g_io_channel_unref(session->io);
 	session->io = NULL;
