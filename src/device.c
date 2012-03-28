@@ -875,7 +875,7 @@ static DBusMessage *get_service_attribute_value_reply(DBusMessage *msg, DBusConn
 	DBusMessage *reply;
 	sdp_data_t *curr;
 	sdp_list_t *ap = 0;
-	const char * supported_formats;
+	char * supported_formats;
 	int ch;
 
 	reply = dbus_message_new_method_return(msg);
@@ -905,10 +905,14 @@ static DBusMessage *get_service_attribute_value_reply(DBusMessage *msg, DBusConn
 			dbus_message_append_args(reply, DBUS_TYPE_INT32, &ch, DBUS_TYPE_INVALID);
 			break;
 		case SDP_ATTR_BPP_SUPPORTED_DOC_FORMAT:
-			supported_formats = attr->val.str;
-			DBG("Supported Document Formats: %s", supported_formats);
-			dbus_message_append_args(reply, DBUS_TYPE_STRING, &supported_formats,
-				DBUS_TYPE_INVALID);
+			supported_formats = (attr->unitSize > 1) ?
+					strndup(attr->val.str, attr->unitSize - 1) : NULL;
+			if (supported_formats != NULL) {
+				DBG("Supported Document Formats: %s", supported_formats);
+				dbus_message_append_args(reply, DBUS_TYPE_STRING, &supported_formats,
+						DBUS_TYPE_INVALID);
+				free(supported_formats);
+			}
 			break;
 		default:
 			DBG("The attribute id is currently not supported!!");
