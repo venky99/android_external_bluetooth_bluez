@@ -59,6 +59,10 @@
 #define GATT_SERVER_INTERFACE	"org.bluez.GattServer"
 #define REQUEST_TIMEOUT (5 * 1000)		/* 5 seconds */
 
+#define CARRIER_NO_RESTRICTION	0
+#define CARRIER_LE_ONLY		1
+#define CARRIER_BR_ONLY		2
+
 const char *gatt_sdp_prefix = "gatt_sdp_";
 const char *gatt_adv_prefix = "gatt_adv_";
 const char *serial_num_str = "SerialNum";
@@ -82,6 +86,7 @@ struct gatt_server {
 	struct gatt_adv_handles	*adv;
 	uint16_t		count;
 	uint16_t		base;
+	uint8_t			carrier;
 	char			*path;
 	char			name[0];
 } *gatt_server_list = NULL, *gatt_server_last = NULL;
@@ -1568,6 +1573,9 @@ static void dbus_read_by_type(struct gatt_channel *channel, uint16_t start,
 	uint16_t type = 0;
 	int err;
 
+	/* To avoid needless recursion */
+restart_read_by_type:
+
 	DBG("start:0x%04x end:0x%04x", start, end);
 
 	while (server && (server->base + server->count) <= start)
@@ -1575,6 +1583,14 @@ static void dbus_read_by_type(struct gatt_channel *channel, uint16_t start,
 
 	if (!server)
 		goto failed;
+
+	/* Apply Carrier restriction if appropriate */
+	if ((server->carrier == CARRIER_BR_ONLY && channel->le) ||
+			(server->carrier == CARRIER_LE_ONLY && !channel->le)) {
+
+		server = server->next;
+		goto restart_read_by_type;
+	}
 
 	if (start > server->base)
 		norm_start = start - server->base;
@@ -1666,13 +1682,9 @@ failed_dbus:
 	/* Attempt on next server, if one exists */
 	if (server != gatt_server_last && server->next) {
 		server = server->next;
-		start = server->base;
-
-		DBG(" Try Next %s, %s 0x%04x,0x%04x", server->name, server->path, start, end);
-
-		dbus_read_by_type(channel, start, end, uuid);
-		return;
+		goto restart_read_by_type;
 	}
+
 	DBG(" Server List End");
 
 failed:
@@ -2661,6 +2673,17 @@ static void dbus_read(struct gatt_channel *channel, uint16_t handle)
 
 	if (!server)
 		goto failed;
+
+	/* Apply Carrier restriction if appropriate */
+	if (server->carrier == CARRIER_BR_ONLY && channel->le) {
+		att_err = ATT_ECODE_INVALID_TRANSPORT;
+		goto failed;
+	}
+
+	if (server->carrier == CARRIER_LE_ONLY && !channel->le) {
+		att_err = ATT_ECODE_INVALID_TRANSPORT;
+		goto failed;
+	}
 
 	if (handle >= server->base)
 		handle -= server->base;
@@ -3779,12 +3802,12 @@ static void create_server_entry(char *key, char *value, void *user_data)
 		return;
 	}
 
-	if (strlen(value) <= 5)
+	if (strlen(value) <= 8)
 		return;
 
 	path = key;
 	plen = strlen(path);
-	name = &value[5];
+	name = &value[8];
 
 	for (nlen = 0; name[nlen]; nlen++) {
 		if (name[nlen] == ' ') {
@@ -3799,6 +3822,7 @@ static void create_server_entry(char *key, char *value, void *user_data)
 		return;
 
 	new_server->count = (uint16_t) strtol(value, NULL, 16);
+	new_server->carrier = (uint8_t) strtol(&value[5], NULL, 16);
 	new_server->prev = gatt_server_last;
 	new_server->path = &new_server->name[nlen + 1];
 	memcpy(new_server->name, name, nlen);
@@ -3860,8 +3884,9 @@ static DBusMessage *register_server(DBusConnection *conn, DBusMessage *msg,
 {
 	char filename[PATH_MAX + 1];
 	char vstr[32];
-	const char *path, *owner;
+	const char *path, *owner, *car;
 	uint16_t cnt;
+	uint8_t carrier = CARRIER_NO_RESTRICTION;
 	uint32_t available = 0x10000, serial_num = 0;
 	char *str;
 
@@ -3878,7 +3903,9 @@ static DBusMessage *register_server(DBusConnection *conn, DBusMessage *msg,
 	if (!dbus_message_get_args(msg, NULL,
 				DBUS_TYPE_STRING, &owner,
 				DBUS_TYPE_OBJECT_PATH, &path,
-				DBUS_TYPE_UINT16, &cnt, DBUS_TYPE_INVALID) ||
+				DBUS_TYPE_UINT16, &cnt,
+				DBUS_TYPE_STRING, &car,
+				DBUS_TYPE_INVALID) ||
 				!cnt || !path || !path[0] ||
 				!owner || !owner[0])
 		return btd_error_invalid_args(msg);
@@ -3913,8 +3940,18 @@ static DBusMessage *register_server(DBusConnection *conn, DBusMessage *msg,
 		textfile_put(filename, serial_num_str, vstr);
 	}
 
+	if (car) {
+		if (!strcmp(car, "LE"))
+			carrier = CARRIER_LE_ONLY;
+		else if (!strcmp(car, "BR"))
+			carrier = CARRIER_BR_ONLY;
+		else
+			carrier = CARRIER_NO_RESTRICTION;
+	}
+
 	/* Register new Server, using fixed size str to prevent db reordering */
-	snprintf(vstr, sizeof(vstr), "%4.4X %s %99s", cnt, owner, " ");
+	snprintf(vstr, sizeof(vstr), "%4.4X %2.2X %s %99s",
+						cnt, carrier, owner, " ");
 	vstr[sizeof(vstr) - 1] = 0;
 	textfile_put(filename, path, vstr);
 
@@ -4256,7 +4293,7 @@ static DBusMessage *get_server_prop(DBusConnection *conn, DBusMessage *msg,
 }
 
 static GDBusMethodTable gatt_server_methods[] = {
-	{ "RegisterServer",      "soq",    "",      register_server,   0, 0 },
+	{ "RegisterServer",      "soqs",   "",      register_server,   0, 0 },
 	{ "AddPrimarySdp",       "ossqqb", "",      add_primary_sdp,   0, 0 },
 	{ "AddPrimaryAdvertise", "os",     "",      add_primary_adv,   0, 0 },
 	{ "DeregisterServer",    "o",      "",      deregister_server, 0, 0 },
