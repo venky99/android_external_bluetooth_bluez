@@ -648,23 +648,23 @@ static const char *sec_level_to_auth(struct gatt_channel *channel)
 
 const char *att_err_map[] = {
 	"",				/* 0x00 */
-	"ATT_ERR_INVALID_HANDLE",	/* 0x01 */
-	"ATT_ERR_READ_NOT_PERM",	/* 0x02 */
-	"ATT_ERR_WRITE_NOT_PERM",	/* 0x03 */
-	"ATT_ERR_INVALID_PDU",		/* 0x04 */
-	"ATT_ERR_AUTHENTICATION",	/* 0x05 */
-	"ATT_ERR_REQ_NOT_SUPP",		/* 0x06 */
-	"ATT_ERR_INVALID_OFFSET",	/* 0x07 */
-	"ATT_ERR_AUTHORIZATION",	/* 0x08 */
-	"ATT_ERR_PREP_QUEUE_FULL",	/* 0x09 */
-	"ATT_ERR_ATTR_NOT_FOUND",	/* 0x0A */
-	"ATT_ERR_ATTR_NOT_LONG",	/* 0x0B */
-	"ATT_ERR_INSUFF_ENCR_KEY_SIZE",	/* 0x0C */
-	"ATT_ERR_INVAL_ATTR_VALUE_LEN",	/* 0x0D */
-	"ATT_ERR_UNLIKELY",		/* 0x0E */
-	"ATT_ERR_INSUFF_ENC",		/* 0x0F */
-	"ATT_ERR_UNSUPP_GRP_TYPE",	/* 0x10 */
-	"ATT_ERR_INSUFF_RESOURCES",	/* 0x11 */
+	ATT_INVALID_HANDLE,	/* 0x01 */
+	ATT_READ_NOT_PERM,	/* 0x02 */
+	ATT_WRITE_NOT_PERM,	/* 0x03 */
+	ATT_INVALID_PDU,		/* 0x04 */
+	ATT_INSUFF_AUTHENTICATION,	/* 0x05 */
+	ATT_REQ_NOT_SUPP,		/* 0x06 */
+	ATT_INVALID_OFFSET,	/* 0x07 */
+	ATT_INSUFF_AUTHORIZATION,	/* 0x08 */
+	ATT_PREP_QUEUE_FULL,	/* 0x09 */
+	ATT_ATTR_NOT_FOUND,	/* 0x0A */
+	ATT_ATTR_NOT_LONG,	/* 0x0B */
+	ATT_INSUFF_ENCR_KEY_SIZE,	/* 0x0C */
+	ATT_INVAL_ATTR_VALUE_LEN,	/* 0x0D */
+	ATT_UNLIKELY,		/* 0x0E */
+	ATT_INSUFF_ENCRYPTION,	/* 0x0F */
+	ATT_UNSUPP_GRP_TYPE,	/* 0x10 */
+	ATT_INSUFF_RESOURCES,	/* 0x11 */
 };
 
 static const char *map_att_error(uint8_t status)
@@ -672,34 +672,40 @@ static const char *map_att_error(uint8_t status)
 	if (status < sizeof(att_err_map)/sizeof(att_err_map[0]))
 		return att_err_map[status];
 
-	return "ATT_ERR_UNLIKELY";
+	return "ATT_UNLIKELY";
 }
 
 static uint8_t map_dbus_error(DBusError *err)
 {
-	if (dbus_error_has_name(err, ATT_ATTR_NOT_FOUND))
+	if (strcmp(err->message, ATT_ATTR_NOT_FOUND) == 0)
 		return ATT_ECODE_ATTR_NOT_FOUND;
 
-	if (dbus_error_has_name(err, ATT_INVALID_HANDLE))
+	if (strcmp(err->message, ATT_INVALID_HANDLE) == 0)
 		return ATT_ECODE_INVALID_HANDLE;
 
-	if (dbus_error_has_name(err, ATT_READ_NOT_PERM))
+	if (strcmp(err->message, ATT_READ_NOT_PERM) == 0)
 		return ATT_ECODE_READ_NOT_PERM;
 
-	if (dbus_error_has_name(err, ATT_WRITE_NOT_PERM))
+	if (strcmp(err->message, ATT_WRITE_NOT_PERM) == 0)
 		return ATT_ECODE_WRITE_NOT_PERM;
 
-	if (dbus_error_has_name(err, ATT_INSUFF_AUTHENTICATION))
+	if (strcmp(err->message, ATT_INSUFF_AUTHENTICATION) == 0)
 		return ATT_ECODE_AUTHENTICATION;
 
-	if (dbus_error_has_name(err, ATT_INSUFF_AUTHORIZATION))
+	if (strcmp(err->message, ATT_INSUFF_AUTHORIZATION) == 0)
 		return ATT_ECODE_AUTHORIZATION;
 
-	if (dbus_error_has_name(err, ATT_INSUFF_ENCRYPTION))
+	if (strcmp(err->message, ATT_INSUFF_ENCRYPTION) == 0)
 		return ATT_ECODE_INSUFF_ENC;
 
-	if (dbus_error_has_name(err, ATT_INSUFF_RESOURCES))
+	if (strcmp(err->message, ATT_INSUFF_RESOURCES) == 0)
 		return ATT_ECODE_INSUFF_RESOURCES;
+
+	if (strncmp(err->message, "ATT_", 4) == 0) {
+		uint8_t error_code = (uint8_t)strtol(&err->message[4], NULL, 16);
+		if (error_code >= 0x80 && error_code <= 0xff)
+			return error_code;
+	}
 
 	return ATT_ECODE_UNLIKELY;
 }
@@ -2559,8 +2565,8 @@ static void read_reply(DBusPendingCall *call, void *user_data)
 	dbus_error_init(&err);
 	if (dbus_set_error_from_message(&err, message)) {
 		att_err = map_dbus_error(&err);
-		error("Server replied with an error: %s, %s",
-				err.name, err.message);
+		error("Server replied with an error: %s, %s (0x%x)",
+			err.name, err.message, att_err);
 		dbus_error_free(&err);
 		goto cleanup_dbus;
 	}
@@ -2803,8 +2809,8 @@ static void write_reply(DBusPendingCall *call, void *user_data)
 	dbus_error_init(&err);
 	if (dbus_set_error_from_message(&err, message)) {
 		att_err = map_dbus_error(&err);
-		error("Server replied with an error: %s, %s",
-				err.name, err.message);
+		DBG("Server replied with an error: %s, %s (0x%x)",
+			err.name, err.message, att_err);
 		dbus_error_free(&err);
 		goto cleanup_dbus;
 	}

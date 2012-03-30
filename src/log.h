@@ -53,6 +53,7 @@ struct btd_debug_desc {
  * name it is called in.
  */
 #define DBG(fmt, arg...) do { \
+	LOGE("%s:%s()" fmt, __FILE__, __func__, ##arg); \
 	static struct btd_debug_desc __btd_debug_desc \
 	__attribute__((used, section("__debug"), aligned(8))) = { \
 		.file = __FILE__, .flags = BTD_DEBUG_FLAG_DEFAULT, \
