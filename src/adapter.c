@@ -663,7 +663,7 @@ static DBusMessage *set_discoverable(DBusConnection *conn, DBusMessage *msg,
 	}
 
 	err = set_mode(adapter, mode, msg);
-	if (err < 0)
+	if (err < 0 && msg)
 		return btd_error_failed(msg, strerror(-err));
 
 	return NULL;
