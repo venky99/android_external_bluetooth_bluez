@@ -2965,12 +2965,15 @@ static int write_value(struct gatt_channel *channel, gboolean resp,
 	if (gatt_server_list && gatt_server_list->base <= handle) {
 		if (resp) {
 			channel->op.u.write.value = g_malloc0(vlen);
-			if(!channel->op.u.write.value)
+			if(!channel->op.u.write.value && vlen)
 				return -1;
 
 			channel->op.opcode = ATT_OP_WRITE_REQ;
 			channel->op.u.write.handle = handle;
-			memcpy(channel->op.u.write.value, value, vlen);
+			if (vlen)
+				memcpy(channel->op.u.write.value, value, vlen);
+			else
+				channel->op.u.write.value = NULL;
 			channel->op.u.write.vlen = vlen;
 			dbus_write(channel, handle, value, vlen);
 		} else {
