@@ -2458,7 +2458,7 @@ gboolean a2dp_sep_unlock(struct a2dp_sep *sep, struct avdtp *session)
 		/* Set timer here */
 		break;
 	case AVDTP_STATE_STREAMING:
-		if (avdtp_suspend(session, sep->stream) == 0)
+		if (session && avdtp_suspend(session, sep->stream) == 0)
 			sep->suspending = TRUE;
 		break;
 	default:
