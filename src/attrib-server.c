@@ -716,6 +716,20 @@ static uint8_t map_dbus_error(DBusError *err, uint16_t *handle)
 	return ATT_ECODE_UNLIKELY;
 }
 
+static gboolean is_channel_valid(gpointer data)
+{
+	GSList *l;
+
+	for (l = clients; l; l = l->next) {
+		if (l->data == data) {
+			DBG("Channel found :%p", data);
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
 static void dbus_read_by_group(struct gatt_channel *channel, uint16_t start,
 						uint16_t end, bt_uuid_t *uuid);
 static void read_by_group_reply(DBusPendingCall *call, void *user_data)
@@ -740,6 +754,11 @@ static void read_by_group_reply(DBusPendingCall *call, void *user_data)
 	/* steal_reply will always return non-NULL since the callback
 	 * is only called after a reply has been received */
 	message = dbus_pending_call_steal_reply(call);
+
+	if (!is_channel_valid(channel)) {
+		dbus_message_unref(message);
+		return;
+	}
 
 	dbus_error_init(&err);
 	if (dbus_set_error_from_message(&err, message)) {
@@ -1149,6 +1168,11 @@ static void read_by_chr_reply(DBusPendingCall *call, void *user_data)
 	 * is only called after a reply has been received */
 	message = dbus_pending_call_steal_reply(call);
 
+	if (!is_channel_valid(channel)) {
+		dbus_message_unref(message);
+		return;
+	}
+
 	dbus_error_init(&err);
 	if (dbus_set_error_from_message(&err, message)) {
 		error("Server replied with an error: %s, %s",
@@ -1300,6 +1324,11 @@ static void read_by_inc_reply(DBusPendingCall *call, void *user_data)
 	 * is only called after a reply has been received */
 	message = dbus_pending_call_steal_reply(call);
 
+	if (!is_channel_valid(channel)) {
+		dbus_message_unref(message);
+		return;
+	}
+
 	dbus_error_init(&err);
 	if (dbus_set_error_from_message(&err, message)) {
 		error("Server replied with an error: %s, %s",
@@ -1441,6 +1470,11 @@ static void read_by_type_reply(DBusPendingCall *call, void *user_data)
 	/* steal_reply will always return non-NULL since the callback
 	 * is only called after a reply has been received */
 	message = dbus_pending_call_steal_reply(call);
+
+	if (!is_channel_valid(channel)) {
+		dbus_message_unref(message);
+		return;
+	}
 
 	dbus_error_init(&err);
 	if (dbus_set_error_from_message(&err, message)) {
@@ -1868,6 +1902,11 @@ static void find_info_reply(DBusPendingCall *call, void *user_data)
 	 * is only called after a reply has been received */
 	message = dbus_pending_call_steal_reply(call);
 
+	if (!is_channel_valid(channel)) {
+		dbus_message_unref(message);
+		return;
+	}
+
 	dbus_error_init(&err);
 	if (dbus_set_error_from_message(&err, message)) {
 		error("Server replied with an error: %s, %s",
@@ -2196,6 +2235,11 @@ static void find_by_type_reply(DBusPendingCall *call, void *user_data)
 	/* steal_reply will always return non-NULL since the callback
 	 * is only called after a reply has been received */
 	message = dbus_pending_call_steal_reply(call);
+
+	if (!is_channel_valid(channel)) {
+		dbus_message_unref(message);
+		return;
+	}
 
 	dbus_error_init(&err);
 	if (dbus_set_error_from_message(&err, message)) {
@@ -2595,6 +2639,11 @@ static void read_reply(DBusPendingCall *call, void *user_data)
 	 * is only called after a reply has been received */
 	message = dbus_pending_call_steal_reply(call);
 
+	if (!is_channel_valid(channel)) {
+		dbus_message_unref(message);
+		return;
+	}
+
 	dbus_error_init(&err);
 	if (dbus_set_error_from_message(&err, message)) {
 		att_err = map_dbus_error(&err, &handle);
@@ -2849,6 +2898,11 @@ static void write_reply(DBusPendingCall *call, void *user_data)
 	/* steal_reply will always return non-NULL since the callback
 	 * is only called after a reply has been received */
 	message = dbus_pending_call_steal_reply(call);
+
+	if (!is_channel_valid(channel)) {
+		dbus_message_unref(message);
+		return;
+	}
 
 	dbus_error_init(&err);
 	if (dbus_set_error_from_message(&err, message)) {
