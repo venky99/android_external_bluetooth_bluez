@@ -2526,8 +2526,8 @@ static int add_handsfree_ag_record(struct btd_adapter* adapter) {
 
 	sdp_uuid16_create(&profile.uuid, HANDSFREE_PROFILE_ID);
 #ifdef ANDROID_EXPAND_NAME
-	property_get("ro.qualcomm.bluetooth.hfp.wbs", value, "");
-	if (!strcmp("true", value))
+	property_get("ro.bluetooth.hfp.ver", value, "1.5");
+	if (!strcmp("1.6", value))
 		profile.version = 0x0106;
 	else
 		profile.version = 0x0105;
@@ -2548,7 +2548,7 @@ static int add_handsfree_ag_record(struct btd_adapter* adapter) {
 	apseq = sdp_list_append(apseq, proto[1]);
 
 #ifdef ANDROID_EXPAND_NAME
-	if (!strcmp("true", value))
+	if (!strcmp("1.6", value))
 		u16 |= 0x20;
 #endif
 	features = sdp_data_alloc(SDP_UINT16, &u16);
