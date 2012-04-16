@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2002-2003  Maxim Krasnyansky <maxk@qualcomm.com>
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2012, Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -221,6 +222,7 @@ static void recv_mode(int sk)
 {
 	struct timeval tv_beg,tv_end,tv_diff;
 	long total;
+	int r;
 
 	syslog(LOG_INFO, "Receiving ...");
 
@@ -228,7 +230,6 @@ static void recv_mode(int sk)
 		gettimeofday(&tv_beg, NULL);
 		total = 0;
 		while (total < data_size) {
-			int r;
 			if ((r = recv(sk, buf, data_size, 0)) <= 0) {
 				if (r < 0)
 					syslog(LOG_ERR, "Read failed: %s (%d)",
@@ -284,14 +285,14 @@ static void send_mode(char *svr)
 			exit(1);
 		}
 
-		usleep(1);
+		usleep(1000);
 	}
 }
 
 static void reconnect_mode(char *svr)
 {
+	int sk;
 	while (1) {
-		int sk;
 
 		if ((sk = do_connect(svr)) < 0) {
 			syslog(LOG_ERR, "Can't connect to the server: %s (%d)",
@@ -307,8 +308,8 @@ static void reconnect_mode(char *svr)
 
 static void multy_connect_mode(char *svr)
 {
+	int i, sk;
 	while (1) {
-		int i, sk;
 
 		for (i = 0; i < 10; i++){
 			if (fork())
