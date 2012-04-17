@@ -615,6 +615,9 @@ static int massage_payload(bt_uuid_t *uuid, uint16_t base, uint16_t limit,
 	} else if (!bt_uuid_cmp(uuid, &aggr_uuid)) {
 		int i;
 
+		if (!dlen)
+			dlen = ATT_DEFAULT_LE_MTU;
+
 		if (plen > dlen || !payload)
 			return -1;
 
@@ -1420,7 +1423,7 @@ static void read_by_type_reply(DBusPendingCall *call, void *user_data)
 	DBusMessage *message;
 	DBusError err;
 	uint16_t length, handle;
-	uint8_t *value, dst[23];
+	uint8_t *value, dst[ATT_DEFAULT_LE_MTU];
 	uint8_t att_err = ATT_ECODE_ATTR_NOT_FOUND;
 	const uint8_t *payload;
 	dbus_int32_t cnt;
@@ -2548,7 +2551,7 @@ static void read_reply(DBusPendingCall *call, void *user_data)
 	DBusMessage *message;
 	DBusError err;
 	uint16_t length = 0;
-	uint8_t dst[23];
+	uint8_t dst[ATT_DEFAULT_LE_MTU];
 	uint8_t att_err = 0;
 	const uint8_t *value;
 	const char *uuid_str;
@@ -4078,7 +4081,7 @@ static DBusMessage *server_notify(DBusConnection *conn, DBusMessage *msg,
 {
 	struct gatt_channel *channel;
 	struct gatt_server *server;
-	uint8_t pdu[23];
+	uint8_t pdu[ATT_DEFAULT_LE_MTU];
 	GSList *l;
 	uint32_t session;
 	const char *path;
@@ -4156,7 +4159,7 @@ static DBusMessage *server_indicate(DBusConnection *conn, DBusMessage *msg,
 {
 	struct gatt_channel *channel = NULL;
 	struct gatt_server *server;
-	uint8_t pdu[23];
+	uint8_t pdu[ATT_DEFAULT_LE_MTU];
 	GSList *l;
 	uint32_t session;
 	const char *path;
