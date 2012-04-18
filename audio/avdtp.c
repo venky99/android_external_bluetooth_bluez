@@ -434,6 +434,7 @@ struct avdtp {
 	gboolean stream_setup;
 
 	DBusPendingCall *pending_auth;
+	gboolean protection_required;
 };
 
 static GSList *servers = NULL;
@@ -3411,6 +3412,16 @@ struct avdtp_service_capability *avdtp_get_remote_sep_protection(struct avdtp_re
 		return sep->protection;
 	}
 	return NULL;
+}
+
+void avdtp_set_protection_req(struct avdtp *session, gboolean value)
+{
+	session->protection_required = value;
+}
+
+gboolean avdtp_get_protection_req(struct avdtp *session)
+{
+	return session->protection_required;
 }
 
 struct avdtp_stream *avdtp_get_stream(struct avdtp_remote_sep *sep)

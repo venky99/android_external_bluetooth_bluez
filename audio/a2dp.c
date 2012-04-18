@@ -1978,10 +1978,22 @@ static gboolean select_capabilities(struct avdtp *session,
 	struct sbc_codec_cap sbc_cap;
 	bdaddr_t src, dst;
 	gboolean edr_capability;
+	struct avdtp_service_capability *media_scms_t;
+	struct avdtp_content_protection_capability scms_t_cap = {0x02, 0x00};
 
 	media_codec = avdtp_get_codec(rsep);
 	if (!media_codec)
 		return FALSE;
+
+	media_scms_t = avdtp_get_remote_sep_protection(rsep);
+	if (avdtp_get_protection_req(session)) {
+		if (!media_scms_t ||
+			(memcmp(media_scms_t->data,
+					&scms_t_cap, sizeof(scms_t_cap)) != 0))
+			return FALSE;
+	}
+
+
 
 	avdtp_get_peers(session, &src, &dst);
 	edr_capability = a2dp_read_edrcapability(&src, &dst);
@@ -2004,6 +2016,17 @@ static gboolean select_capabilities(struct avdtp *session,
 		delay_reporting = avdtp_service_cap_new(AVDTP_DELAY_REPORTING,
 								NULL, 0);
 		*caps = g_slist_append(*caps, delay_reporting);
+	}
+
+	if (avdtp_get_protection_req(session)) {
+		if (media_scms_t &&
+			(memcmp(media_scms_t->data, &scms_t_cap,
+						sizeof(scms_t_cap)) == 0)) {
+			media_scms_t = avdtp_service_cap_new(
+							AVDTP_CONTENT_PROTECTION,
+							&scms_t_cap, 2);
+			*caps = g_slist_append(*caps, media_scms_t);
+		}
 	}
 
 	return TRUE;

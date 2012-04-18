@@ -427,9 +427,12 @@ static void discovery_complete(struct avdtp *session, GSList *seps, struct avdtp
 
 	DBG("Discovery complete");
 
+	sink->protected = sink->protection_required;
+
+	avdtp_set_protection_req(sink->session, sink->protected);
+
 	id = a2dp_select_capabilities(sink->session, AVDTP_SEP_TYPE_SINK, NULL,
 						select_complete, sink);
-	sink->protected = sink->protection_required;
 	if (id == 0)
 		goto failed;
 

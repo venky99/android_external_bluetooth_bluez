@@ -329,3 +329,5 @@ void avdtp_set_device_disconnect(struct avdtp *session, gboolean dev_dc);
 int avdtp_init(const bdaddr_t *src, GKeyFile *config, uint16_t *version);
 void avdtp_exit(const bdaddr_t *src);
 void copy_capabilities(gpointer data, gpointer user_data);
+gboolean avdtp_get_protection_req(struct avdtp *session);
+void avdtp_set_protection_req(struct avdtp *session, gboolean value);
