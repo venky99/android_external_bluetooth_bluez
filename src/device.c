@@ -2419,6 +2419,9 @@ static gboolean start_discovery(gpointer user_data)
 {
 	struct btd_device *device = user_data;
 
+	if (!device->connected)
+		return FALSE;
+
 	if (device_get_type(device) == DEVICE_TYPE_LE)
 		device_browse_primary(device, NULL, NULL, TRUE);
 	else
