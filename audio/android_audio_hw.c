@@ -203,7 +203,7 @@ static int _out_init_locked(struct astream_out *out, const char *addr)
         return 0;
 
     /* XXX: shouldn't this use the sample_rate/channel_count from 'out'? */
-    ret = a2dp_init(44100, 2, &out->data);
+    ret = a2dp_init(48000, 2, &out->data);
     if (ret < 0) {
         LOGE("a2dp_init failed err: %d\n", ret);
         out->data = NULL;
@@ -642,7 +642,7 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     out->stream.write = out_write;
     out->stream.get_render_position = out_get_render_position;
 
-    out->sample_rate = 44100;
+    out->sample_rate = 48000;
     out->buffer_size = 512 * 20;
     out->channels = AUDIO_CHANNEL_OUT_STEREO;
     out->format = AUDIO_FORMAT_PCM_16_BIT;
