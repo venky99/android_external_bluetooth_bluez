@@ -2855,6 +2855,7 @@ done:
 				channel->op.u.write.handle,
 				att_err, channel->opdu, channel->mtu);
 
+	g_free(channel->op.u.write.value);
 	channel->op.opcode = 0;
 	server_resp(channel->attrib, 0, channel->opdu[0],
 			channel->opdu, length, NULL, NULL, NULL);
@@ -2973,16 +2974,16 @@ static int write_value(struct gatt_channel *channel, gboolean resp,
 
 	if (gatt_server_list && gatt_server_list->base <= handle) {
 		if (resp) {
-			channel->op.u.write.value = g_malloc0(vlen);
-			if(!channel->op.u.write.value && vlen)
-				return -1;
+			if (value && vlen)
+				channel->op.u.write.value = g_malloc0(vlen);
+			else
+				channel->op.u.write.value = NULL;
+
+			if (channel->op.u.write.value)
+				memcpy(channel->op.u.write.value, value, vlen);
 
 			channel->op.opcode = ATT_OP_WRITE_REQ;
 			channel->op.u.write.handle = handle;
-			if (vlen)
-				memcpy(channel->op.u.write.value, value, vlen);
-			else
-				channel->op.u.write.value = NULL;
 			channel->op.u.write.vlen = vlen;
 			dbus_write(channel, handle, value, vlen);
 		} else {
