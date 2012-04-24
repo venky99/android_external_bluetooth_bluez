@@ -143,7 +143,7 @@ static gboolean is_response(guint8 opcode)
 
 GAttrib *g_attrib_ref(GAttrib *attrib)
 {
-	DBG(" attrib: %p %d", attrib, attrib ? attrib->refs-1 : 0);
+	DBG(" attrib: %p %d", attrib, attrib ? attrib->refs+1 : 0);
 
 	if (!attrib)
 		return NULL;
