@@ -4277,6 +4277,36 @@ static DBusMessage *server_indicate(DBusConnection *conn, DBusMessage *msg,
 	return NULL;
 }
 
+static DBusMessage *get_reg_servers(DBusConnection *conn, DBusMessage *msg,
+								void *data)
+{
+	DBusMessage *reply;
+	DBusMessageIter iter;
+	DBusMessageIter array_iter;
+
+	if (!dbus_message_has_signature(msg, DBUS_TYPE_INVALID_AS_STRING))
+		return btd_error_invalid_args(msg);
+
+	reply = dbus_message_new_method_return(msg);
+	if (!reply)
+		return NULL;
+
+	dbus_message_iter_init_append(reply, &iter);
+	dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY,
+				DBUS_TYPE_OBJECT_PATH_AS_STRING, &array_iter);
+	if (gatt_server_list) {
+		struct gatt_server *l;
+
+		for (l = gatt_server_list; l; l = l->next) {
+
+		dbus_message_iter_append_basic(&array_iter,
+				DBUS_TYPE_OBJECT_PATH, &l->path);
+		}
+	}
+	dbus_message_iter_close_container(&iter, &array_iter);
+	return reply;
+}
+
 static DBusMessage *get_server_prop(DBusConnection *conn, DBusMessage *msg,
 								void *data)
 {
@@ -4300,6 +4330,7 @@ static GDBusMethodTable gatt_server_methods[] = {
 	{ "Notify",              "ouqay",  "",      server_notify,     0, 0 },
 	{ "Indicate",            "ouqay",  "",      server_indicate,   
 						G_DBUS_METHOD_FLAG_ASYNC, 0 },
+	{ "GetRegisteredServers", "",      "a{o}",  get_reg_servers,   0, 0 },
 	{ "GetProperty",         "os",     "v",     get_server_prop,   0, 0 },
 	{ NULL, NULL, NULL, NULL, 0, 0 }
 };
