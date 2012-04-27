@@ -656,23 +656,23 @@ static const char *sec_level_to_auth(struct gatt_channel *channel)
 
 const char *att_err_map[] = {
 	"",				/* 0x00 */
-	ATT_INVALID_HANDLE,	/* 0x01 */
-	ATT_READ_NOT_PERM,	/* 0x02 */
-	ATT_WRITE_NOT_PERM,	/* 0x03 */
+	ATT_INVALID_HANDLE,		/* 0x01 */
+	ATT_READ_NOT_PERM,		/* 0x02 */
+	ATT_WRITE_NOT_PERM,		/* 0x03 */
 	ATT_INVALID_PDU,		/* 0x04 */
 	ATT_INSUFF_AUTHENTICATION,	/* 0x05 */
 	ATT_REQ_NOT_SUPP,		/* 0x06 */
-	ATT_INVALID_OFFSET,	/* 0x07 */
+	ATT_INVALID_OFFSET,		/* 0x07 */
 	ATT_INSUFF_AUTHORIZATION,	/* 0x08 */
-	ATT_PREP_QUEUE_FULL,	/* 0x09 */
-	ATT_ATTR_NOT_FOUND,	/* 0x0A */
-	ATT_ATTR_NOT_LONG,	/* 0x0B */
+	ATT_PREP_QUEUE_FULL,		/* 0x09 */
+	ATT_ATTR_NOT_FOUND,		/* 0x0A */
+	ATT_ATTR_NOT_LONG,		/* 0x0B */
 	ATT_INSUFF_ENCR_KEY_SIZE,	/* 0x0C */
 	ATT_INVAL_ATTR_VALUE_LEN,	/* 0x0D */
-	ATT_UNLIKELY,		/* 0x0E */
-	ATT_INSUFF_ENCRYPTION,	/* 0x0F */
-	ATT_UNSUPP_GRP_TYPE,	/* 0x10 */
-	ATT_INSUFF_RESOURCES,	/* 0x11 */
+	ATT_UNLIKELY,			/* 0x0E */
+	ATT_INSUFF_ENCRYPTION,		/* 0x0F */
+	ATT_UNSUPP_GRP_TYPE,		/* 0x10 */
+	ATT_INSUFF_RESOURCES,		/* 0x11 */
 };
 
 static const char *map_att_error(uint8_t status)
@@ -680,41 +680,45 @@ static const char *map_att_error(uint8_t status)
 	if (status < sizeof(att_err_map)/sizeof(att_err_map[0]))
 		return att_err_map[status];
 
-	return "ATT_UNLIKELY";
+	return att_err_map[ATT_ECODE_UNLIKELY];
 }
 
-static uint8_t map_dbus_error(DBusError *err)
+static uint8_t map_dbus_error(DBusError *err, uint16_t *handle)
 {
-	if (strcmp(err->message, ATT_ATTR_NOT_FOUND) == 0)
-		return ATT_ECODE_ATTR_NOT_FOUND;
+	const char *app_err = "ATT_0x";
+	size_t len;
+	int i, j, array_len;
 
-	if (strcmp(err->message, ATT_INVALID_HANDLE) == 0)
-		return ATT_ECODE_INVALID_HANDLE;
+	array_len = sizeof(att_err_map)/sizeof(att_err_map[0]);
 
-	if (strcmp(err->message, ATT_READ_NOT_PERM) == 0)
-		return ATT_ECODE_READ_NOT_PERM;
+	/* Standard ATT Error codes */
+	for (i = ATT_ECODE_INVALID_HANDLE; i < array_len; i++) {
+		len = strlen(att_err_map[i]);
 
-	if (strcmp(err->message, ATT_WRITE_NOT_PERM) == 0)
-		return ATT_ECODE_WRITE_NOT_PERM;
+		if (strncmp(err->message, att_err_map[i], len) == 0) {
+			if (sscanf(&err->message[len], ".%x", &j) != 1)
+				j = 0xffff;
 
-	if (strcmp(err->message, ATT_INSUFF_AUTHENTICATION) == 0)
-		return ATT_ECODE_AUTHENTICATION;
-
-	if (strcmp(err->message, ATT_INSUFF_AUTHORIZATION) == 0)
-		return ATT_ECODE_AUTHORIZATION;
-
-	if (strcmp(err->message, ATT_INSUFF_ENCRYPTION) == 0)
-		return ATT_ECODE_INSUFF_ENC;
-
-	if (strcmp(err->message, ATT_INSUFF_RESOURCES) == 0)
-		return ATT_ECODE_INSUFF_RESOURCES;
-
-	if (strncmp(err->message, "ATT_", 4) == 0) {
-		uint8_t error_code = (uint8_t)strtol(&err->message[4], NULL, 16);
-		if (error_code >= 0x80 && error_code <= 0xff)
-			return error_code;
+			*handle = (uint16_t) j;
+			return (uint8_t) i;
+		}
 	}
 
+	/* Extended and Application Error codes */
+	len = strlen(app_err);
+	if (strncmp(err->message, app_err, len) == 0) {
+		if (sscanf(&err->message[len], "%x.%x", &i, &j) != 2) {
+			*handle = 0xffff;
+			return ATT_ECODE_UNLIKELY;
+		}
+
+		*handle = (uint16_t) j;
+		if (((uint8_t) i) & 0xFF)
+			return (uint8_t) i;
+	}
+
+	/* Unrecognized Error code */
+	*handle = 0xffff;
 	return ATT_ECODE_UNLIKELY;
 }
 
@@ -1427,7 +1431,7 @@ static void read_by_type_reply(DBusPendingCall *call, void *user_data)
 	struct gatt_server *server = channel->op.server;
 	DBusMessage *message;
 	DBusError err;
-	uint16_t length, handle;
+	uint16_t length, handle, err_handle = 0;
 	uint8_t *value, dst[ATT_DEFAULT_LE_MTU];
 	uint8_t att_err = ATT_ECODE_ATTR_NOT_FOUND;
 	const uint8_t *payload;
@@ -1449,7 +1453,22 @@ static void read_by_type_reply(DBusPendingCall *call, void *user_data)
 		error("Server replied with an error: %s, %s",
 				err.name, err.message);
 
+		att_err = map_dbus_error(&err, &err_handle);
 		dbus_error_free(&err);
+
+		/* Ensure server didn't return handle outside it's range */
+		if (err_handle >= server->count)
+			err_handle = server->count - 1;
+
+		err_handle += server->base;
+
+		/* Ensure error handle within requested range */
+		if (err_handle < channel->op.u.read_by_type.start)
+			err_handle = channel->op.u.read_by_type.start;
+
+		if (err_handle > channel->op.u.read_by_type.end)
+			err_handle = channel->op.u.read_by_type.end;
+
 		goto cleanup_dbus;
 	}
 
@@ -1528,6 +1547,11 @@ cleanup_dbus:
 		goto done;
 	}
 
+	if (att_err != ATT_ECODE_ATTR_NOT_FOUND) {
+		terminated = TRUE;
+		goto done;
+	}
+
 	/* See if any other servers could provide results */
 	while (server && (handle >= (server->base + server->count)))
 		server = server->next;
@@ -1548,10 +1572,10 @@ done:
 	}
 
 	if (terminated) {
-		/* Or send NOT FOUND */
+		/* Or send Error */
 		length = enc_error_resp(ATT_OP_READ_BY_TYPE_REQ,
-					channel->op.u.read_by_type.start,
-					att_err, channel->opdu, channel->mtu);
+					err_handle, att_err,
+					channel->opdu, channel->mtu);
 
 		channel->op.opcode = 0;
 		server_resp(channel->attrib, 0, channel->opdu[0],
@@ -2562,7 +2586,7 @@ static void read_reply(DBusPendingCall *call, void *user_data)
 	struct gatt_server *server = channel->op.server;
 	DBusMessage *message;
 	DBusError err;
-	uint16_t length = 0;
+	uint16_t handle, length = 0;
 	uint8_t dst[ATT_DEFAULT_LE_MTU];
 	uint8_t att_err = 0;
 	const uint8_t *value;
@@ -2579,7 +2603,7 @@ static void read_reply(DBusPendingCall *call, void *user_data)
 
 	dbus_error_init(&err);
 	if (dbus_set_error_from_message(&err, message)) {
-		att_err = map_dbus_error(&err);
+		att_err = map_dbus_error(&err, &handle);
 		error("Server replied with an error: %s, %s (0x%x)",
 			err.name, err.message, att_err);
 		dbus_error_free(&err);
@@ -2823,7 +2847,7 @@ static void write_reply(DBusPendingCall *call, void *user_data)
 	const char *uuid_str;
 	bt_uuid_t uuid;
 	DBusError err;
-	uint16_t length;
+	uint16_t handle, length;
 	uint8_t att_err = 0;
 
 	DBG("");
@@ -2834,7 +2858,7 @@ static void write_reply(DBusPendingCall *call, void *user_data)
 
 	dbus_error_init(&err);
 	if (dbus_set_error_from_message(&err, message)) {
-		att_err = map_dbus_error(&err);
+		att_err = map_dbus_error(&err, &handle);
 		DBG("Server replied with an error: %s, %s (0x%x)",
 			err.name, err.message, att_err);
 		dbus_error_free(&err);
