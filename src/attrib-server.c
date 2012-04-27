@@ -3076,7 +3076,9 @@ static void zero_cli_cfg(char *key, char *value, void *user_data)
 	dbus_message_unref(msg);
 }
 
-static void channel_disconnect(void *user_data)
+static void ind_return(guint8 status, const guint8 *pdu, guint16 len,
+								gpointer data);
+static void channel_destroy(void *user_data)
 {
 	struct gatt_channel *channel = user_data;
 	char filename[PATH_MAX + 1];
@@ -3087,13 +3089,41 @@ static void channel_disconnect(void *user_data)
 	make_cli_cfg_name(filename, channel);
 	textfile_foreach(filename, zero_cli_cfg, channel);
 
+	if (channel->ind_msg) {
+		DBG(" return_failure channel->ind_msg");
+		ind_return(ATT_ECODE_UNLIKELY, NULL, 0, channel);
+	}
+
 	clients = g_slist_remove(clients, channel);
+
+	if (channel->msg) {
+		DBG("channel_disconnect channel->msg");
+		dbus_message_unref(channel->msg);
+		channel->msg = NULL;
+	}
+
+	if (channel->call) {
+		DBG("channel_disconnect channel->call");
+		dbus_pending_call_unref(channel->call);
+		channel->call = NULL;
+	}
 
 	g_slist_free(channel->notify);
 	g_slist_free(channel->indicate);
 	g_attrib_set_disconnect_server_function(channel->attrib, NULL, NULL);
+	g_attrib_set_destroy_function(channel->attrib, NULL, NULL);
 
 	g_free(channel);
+}
+
+static void channel_disconnect(void *user_data)
+{
+	struct gatt_channel *channel = user_data;
+	GAttrib *attrib = channel->attrib;
+	DBG("");
+
+	channel_destroy(channel);
+	g_attrib_unref(attrib);
 }
 
 static void channel_handler(const uint8_t *ipdu, uint16_t len,
@@ -3392,8 +3422,9 @@ void attrib_server_attach(struct _GAttrib *attrib, bdaddr_t *src,
 	channel->id = g_attrib_register(attrib, GATTRIB_ALL_REQS,
 				channel_handler, channel, NULL);
 
+	g_attrib_set_destroy_function(attrib, channel_destroy, channel);
 	g_attrib_set_disconnect_server_function(attrib, channel_disconnect,
-								channel);
+			channel);
 
 	clients = g_slist_append(clients, channel);
 
@@ -3431,8 +3462,6 @@ static void connect_event(GIOChannel *io, GError *err, void *user_data)
 
 			attrib_server_attach(attrib, &src, &dst, omtu);
 	}
-
-	g_io_channel_unref(io);
 }
 
 static void confirm_event(GIOChannel *io, void *user_data)
