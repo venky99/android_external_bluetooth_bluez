@@ -4,7 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
- *  Copyright (C) 2011, Code Aurora Forum. All rights reserved.
+ *  Copyright (C) 2011-2012  Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -1181,9 +1181,13 @@ int conn_get_pending_sec_level(struct btd_device *device, uint8_t *pending_sec_l
 	dev_id = hci_devid(addr);
 
 	dd = hci_open_dev(dev_id);
+	if (dd < 0)
+		return dd;
+
 	cr = g_malloc0(sizeof(*cr) + sizeof(struct hci_conn_info));
 
-	if(cr == NULL) {
+	if (cr == NULL) {
+		hci_close_dev(dd);
 		return  -ENOMEM;
 	}
 	cr->type = ACL_LINK;
@@ -1194,6 +1198,7 @@ int conn_get_pending_sec_level(struct btd_device *device, uint8_t *pending_sec_l
 		*pending_sec_level = cr->conn_info->pending_sec_level;
 	g_free(cr);
 
+	hci_close_dev(dd);
 	return err;
 }
 
