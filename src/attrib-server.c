@@ -484,28 +484,22 @@ static uint8_t client_set_configurations(struct attribute *attr,
 static struct attribute *client_cfg_attribute(struct gatt_channel *channel,
 						struct attribute *orig_attr)
 {
-	guint handle = orig_attr->handle;
-	static struct attribute *a = NULL;
+	static uint8_t static_attribute[sizeof(struct attribute) + 2];
+	struct attribute *a = (void *) &static_attribute;
 
 	if (bt_uuid_cmp(&orig_attr->uuid, &clicfg_uuid) != 0)
 		return NULL;
 
 	/* permanent memory for passing client Config data */
-	if (!a) {
-		a = g_malloc0(sizeof(struct attribute) + 2);
-		if (!a)
-			return NULL;
-
-		a->uuid = clicfg_uuid;
-		a->read_reqs = ATT_NONE;
-		a->write_reqs = ATT_AUTHORIZATION;
-		a->read_cb = client_get_configurations;
-		a->write_cb = client_set_configurations;
-		a->len = 2;
-	}
+	a->uuid = clicfg_uuid;
+	a->read_reqs = ATT_NONE;
+	a->write_reqs = ATT_AUTHORIZATION;
+	a->read_cb = client_get_configurations;
+	a->write_cb = client_set_configurations;
+	a->len = 2;
 
 	a->cb_user_data = channel;
-	a->handle = handle;
+	a->handle = orig_attr->handle;
 
 	return a;
 }
@@ -1763,12 +1757,12 @@ static int read_by_type(struct gatt_channel *channel, uint16_t start,
 		if (bt_uuid_cmp(&a->uuid, uuid) != 0)
 			continue;
 
-		status = att_check_reqs(channel, ATT_OP_READ_BY_TYPE_REQ,
-								a->read_reqs);
-
 		client_attr = client_cfg_attribute(channel, a);
 		if (client_attr)
 			a = client_attr;
+
+		status = att_check_reqs(channel, ATT_OP_READ_BY_TYPE_REQ,
+								a->read_reqs);
 
 		if (status == 0x00 && a->read_cb)
 			status = a->read_cb(a, a->cb_user_data);
@@ -2779,11 +2773,11 @@ static int read_value(struct gatt_channel *channel, uint16_t handle,
 
 	a = l->data;
 
-	status = att_check_reqs(channel, ATT_OP_READ_REQ, a->read_reqs);
-
 	client_attr = client_cfg_attribute(channel, a);
 	if (client_attr)
 		a = client_attr;
+
+	status = att_check_reqs(channel, ATT_OP_READ_REQ, a->read_reqs);
 
 	if (status == 0x00 && a->read_cb)
 		status = a->read_cb(a, a->cb_user_data);
@@ -2820,15 +2814,15 @@ static int read_blob(struct gatt_channel *channel, uint16_t handle,
 
 	a = l->data;
 
-	if (a->len <= offset)
-		return enc_error_resp(ATT_OP_READ_BLOB_REQ, handle,
-					ATT_ECODE_INVALID_OFFSET, pdu, len);
-
-	status = att_check_reqs(channel, ATT_OP_READ_BLOB_REQ, a->read_reqs);
-
 	client_attr = client_cfg_attribute(channel, a);
 	if (client_attr)
 		a = client_attr;
+
+	status = att_check_reqs(channel, ATT_OP_READ_BLOB_REQ, a->read_reqs);
+
+	if (!status && a->len <= offset)
+		return enc_error_resp(ATT_OP_READ_BLOB_REQ, handle,
+					ATT_ECODE_INVALID_OFFSET, pdu, len);
 
 	if (status == 0x00 && a->read_cb)
 		status = a->read_cb(a, a->cb_user_data);
