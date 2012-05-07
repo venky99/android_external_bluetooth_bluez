@@ -2477,9 +2477,10 @@ static int find_by_type(struct gatt_channel *channel, uint16_t start,
 	struct att_data_list *adl = NULL;
 	struct att_range *range;
 	GSList *l, *matches;
+	bt_uuid_t srch_uuid, tmp_uuid;
 	uint16_t length;
 	int i;
-	gboolean terminated = FALSE;
+	gboolean compare, terminated = FALSE;
 
 	DBG("start:0x%04x end:0x%04x", start, end);
 
@@ -2487,7 +2488,8 @@ static int find_by_type(struct gatt_channel *channel, uint16_t start,
 		return enc_error_resp(ATT_OP_FIND_BY_TYPE_REQ, start,
 					ATT_ECODE_INVALID_HANDLE, opdu, len);
 
-	if (vlen != 2 && vlen != 16)
+	if (vlen != sizeof(struct server_def_val16) &&
+			vlen != sizeof(struct server_def_val128))
 		return enc_error_resp(ATT_OP_FIND_BY_TYPE_REQ, start,
 					ATT_ECODE_INVALID_PDU, opdu, len);
 
@@ -2497,6 +2499,11 @@ static int find_by_type(struct gatt_channel *channel, uint16_t start,
 
 	if (gatt_server_list && gatt_server_list->base <= start)
 		goto empty_list;
+
+	if (vlen == sizeof(struct server_def_val128))
+		bt_uuid128_create(&srch_uuid, att_get_u128(value));
+	else
+		bt_uuid16_create(&srch_uuid, att_get_u16(value));
 
 	/* Searching first requested handle number */
 	for (l = database, matches = NULL, range = NULL; l; l = l->next) {
@@ -2510,9 +2517,23 @@ static int find_by_type(struct gatt_channel *channel, uint16_t start,
 			break;
 		}
 
-		/* Primary service? Attribute value matches? */
-		if ((bt_uuid_cmp(&a->uuid, uuid) == 0) && (a->len == vlen) &&
-					(memcmp(a->data, value, vlen) == 0)) {
+		/* Convert attribute value to UUID for generic UUID compares */
+		if (a->len == sizeof(struct server_def_val16) ||
+				a->len == sizeof(struct server_def_val128)) {
+			compare = TRUE;
+			if (a->len == sizeof(struct server_def_val128))
+				bt_uuid128_create(&tmp_uuid,
+						att_get_u128(a->data));
+			else
+				bt_uuid16_create(&tmp_uuid,
+						att_get_u16(a->data));
+		} else {
+			compare = FALSE;
+		}
+
+		/* Attribute value UUID matches? */
+		if (compare && bt_uuid_cmp(&a->uuid, uuid) == 0 &&
+				bt_uuid_cmp(&tmp_uuid, &srch_uuid) == 0) {
 
 			range = g_new0(struct att_range, 1);
 			range->start = a->handle;
