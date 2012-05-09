@@ -199,14 +199,6 @@ void force_master_role(struct btd_adapter *adapter)
 	dev = adapter->streaming_device;
 	remote_bdaddr = get_bdaddr(dev);
 
-	/*Check whether this is needed for the remote device
-	  by comparing against the known IOP devices
-	*/
-	match = 0;
-	ret = read_special_map_devaddr("force_master", remote_bdaddr, &match);
-	if (ret < 0 || !match)
-		return;
-
 	dev_id = adapter_get_dev_id(adapter);
 	dd = hci_open_dev(dev_id);
 	if (dd < 0)
