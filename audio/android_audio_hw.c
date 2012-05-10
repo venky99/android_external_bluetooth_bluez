@@ -1,5 +1,6 @@
 /*
  *  Copyright (C) 2008-2011 The Android Open Source Project
+ *  Copyright (C) 2012, Code Aurora Forum. All rights reserved.
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -643,7 +644,7 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     out->stream.get_render_position = out_get_render_position;
 
     out->sample_rate = 48000;
-    out->buffer_size = 512 * 20;
+    out->buffer_size = 512 * 8;
     out->channels = AUDIO_CHANNEL_OUT_STEREO;
     out->format = AUDIO_FORMAT_PCM_16_BIT;
 
