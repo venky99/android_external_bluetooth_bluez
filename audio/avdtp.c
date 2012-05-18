@@ -470,14 +470,6 @@ void avdtp_reset_link_policy(struct avdtp *session)
 
 	DBG(" ");
 
-	/*Check whether this is needed for the remote device
-	  by comparing against the known IOP devices
-	*/
-	match = 0;
-	ret = read_special_map_devaddr("force_master", &session->dst, &match);
-	if (ret < 0 || !match)
-		return;
-
 	adapter = manager_find_adapter(&session->server->src);
 	if (!adapter)
 		return;
