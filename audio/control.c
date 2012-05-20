@@ -141,7 +141,7 @@
 #define ERROR_UID_NOT_EXIST	0X09
 
 /* AVRCP1.3 MetaData Attributes ID */
-#define METADATA_DEFAULT_MASK	0x5F
+#define METADATA_DEFAULT_MASK	0x7F
 #define METADATA_TITLE		0X1
 #define METADATA_ARTIST		0X2
 #define METADATA_ALBUM		0X3
@@ -155,7 +155,7 @@
 #define DEFAULT_METADATA_STRING	"Unknown"
 #define DEFAULT_METADATA_NUMBER	"1234567890"
 #define METADATA_MAXIMUM_CNT	7
-#define METADATA_SUPPORTED_CNT	6
+#define METADATA_SUPPORTED_CNT	7
 #define AVRCP_MAX_PKT_SIZE	512
 
 /* AVRCP1.3 Character set */
@@ -261,6 +261,7 @@ struct meta_data {
 	gchar *media_number;
 	gchar *total_media_count;
 	gchar *playing_time;
+	gchar *genre;
 	gchar *remaining_mdata;
 	int remaining_mdata_len;
 	uint8_t trans_id_event_track;
@@ -1443,7 +1444,7 @@ static DBusMessage *update_metadata(DBusConnection *conn, DBusMessage *msg,
 	struct control *control = device->control;
 	struct meta_data *mdata = control->mdata;
 	DBusMessage *reply;
-	const gchar *title, *artist, *album;
+	const gchar *title, *artist, *album, *genre;
 	const gchar *media_number, *total_media_count, *playing_time;
 	int err;
 
@@ -1453,13 +1454,14 @@ static DBusMessage *update_metadata(DBusConnection *conn, DBusMessage *msg,
 						DBUS_TYPE_STRING, &media_number,
 						DBUS_TYPE_STRING, &total_media_count,
 						DBUS_TYPE_STRING, &playing_time,
+						DBUS_TYPE_STRING, &genre,
 						DBUS_TYPE_INVALID) == FALSE) {
 		return g_dbus_create_error(msg, ERROR_INTERFACE ".InvalidArguments",
 			"Invalid arguments in method call");
 	}
 
-	DBG("MetaData is %s %s %s %s %s %s", title, artist, album, media_number,
-			total_media_count, playing_time);
+	DBG("MetaData is %s %s %s %s %s %s %s", title, artist, album, media_number,
+			total_media_count, playing_time, genre);
 	if (strlen(title) < METADATA_MAX_STRING_LEN)
 		strcpy(mdata->title, title);
 	else
@@ -1484,6 +1486,10 @@ static DBusMessage *update_metadata(DBusConnection *conn, DBusMessage *msg,
 		strcpy(mdata->playing_time, playing_time);
 	else
 		strncpy(mdata->playing_time, playing_time, (METADATA_MAX_NUMBER_LEN-1));
+	if (strlen(genre) < METADATA_MAX_STRING_LEN)
+		strcpy(mdata->genre, genre);
+	else
+		strncpy(mdata->genre, genre, (METADATA_MAX_STRING_LEN-1));
 
 	return dbus_message_new_method_return(msg);
 }
@@ -1523,7 +1529,7 @@ static GDBusMethodTable control_methods[] = {
 	{ "GetProperties",	"",	"a{sv}",control_get_properties },
 	{ "VolumeUp",		"",	"",	volume_up },
 	{ "VolumeDown",		"",	"",	volume_down },
-	{ "UpdateMetaData",	"ssssss",	"",	update_metadata },
+	{ "UpdateMetaData",	"sssssss",	"",	update_metadata },
 	{ "UpdatePlayStatus",	"uuu",	"",	update_play_status },
 	{ "UpdateNotification",	"qt",	"",	update_notification },
 	{ NULL, NULL, NULL, NULL }
@@ -1566,6 +1572,10 @@ static void metadata_cleanup(struct meta_data *mdata) {
 		g_free(mdata->remaining_mdata);
 		mdata->remaining_mdata = NULL;
 		mdata->remaining_mdata_len = 0;
+	}
+	if (mdata->genre) {
+		g_free(mdata->genre);
+		mdata->genre = NULL;
 	}
 
 }
@@ -1652,10 +1662,11 @@ struct control *control_init(struct audio_device *dev, uint16_t uuid16)
 	mdata->media_number = g_new0(gchar, METADATA_MAX_NUMBER_LEN);
 	mdata->total_media_count = g_new0(gchar, METADATA_MAX_NUMBER_LEN);
 	mdata->playing_time = g_new0(gchar, METADATA_MAX_NUMBER_LEN);
+	mdata->genre = g_new0(gchar, METADATA_MAX_STRING_LEN);
 
 	if (!(mdata->title) || !(mdata->artist) || !(mdata->album) ||
 			!(mdata->media_number) || !(mdata->total_media_count) ||
-			!(mdata->playing_time)) {
+			!(mdata->playing_time) || !(mdata->genre)) {
 		DBG("No Memory available for meta data");
 		metadata_cleanup(mdata);
 		g_free(mdata);
@@ -1668,6 +1679,7 @@ struct control *control_init(struct audio_device *dev, uint16_t uuid16)
 	strcpy(mdata->media_number,DEFAULT_METADATA_NUMBER);
 	strcpy(mdata->total_media_count,DEFAULT_METADATA_NUMBER);
 	strcpy(mdata->playing_time,DEFAULT_METADATA_NUMBER);
+	strcpy(mdata->genre, DEFAULT_METADATA_STRING);
 	mdata->remaining_mdata = NULL;
 	mdata->remaining_mdata_len = 0;
 	mdata->trans_id_event_track = 0;
@@ -1923,9 +1935,9 @@ static int send_meta_data(struct control *control, uint8_t trans_id,
 		mdata_field = (struct meta_data_field *)op;
 		mdata_field->att_id = htonl(METADATA_GENRE);
 		mdata_field->char_set_id = htons(CHARACTER_SET_UTF8);
-		len = strlen(DEFAULT_METADATA_STRING);
+		len = strlen(mdata->genre);
 		mdata_field->att_len = htons(len);
-		strncpy(mdata_field->val, DEFAULT_METADATA_STRING, len);
+		strncpy(mdata_field->val, mdata->genre, len);
 		meta_data_len += len;
 		DBG("METADATA_GENRE %d %d", len, meta_data_len);
 	}
