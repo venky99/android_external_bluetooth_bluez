@@ -246,9 +246,11 @@ static void device_free(gpointer user_data)
 	g_slist_foreach(device->primaries, (GFunc) g_free, NULL);
 	g_slist_free(device->primaries);
 
-	if (device->tmp_records)
+	if (device->tmp_records) {
 		sdp_list_free(device->tmp_records,
 					(sdp_free_func_t) sdp_record_free);
+		device->tmp_records = NULL;
+	}
 
 	if (device->disconn_timer)
 		g_source_remove(device->disconn_timer);
@@ -1983,9 +1985,11 @@ static void search_cb(sdp_list_t *recs, int err, gpointer user_data)
 
 	update_services(req, recs);
 
-	if (device->tmp_records)
+	if (device->tmp_records) {
 		sdp_list_free(device->tmp_records,
 					(sdp_free_func_t) sdp_record_free);
+		device->tmp_records = NULL;
+	}
 
 	device->tmp_records = req->records;
 	req->records = NULL;
