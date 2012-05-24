@@ -162,8 +162,6 @@ struct btd_adapter {
 
 static void adapter_set_pairable_timeout(struct btd_adapter *adapter,
 					guint interval);
-static DBusMessage *set_discoverable(DBusConnection *conn, DBusMessage *msg,
-				gboolean discoverable, void *data);
 
 void update_streaming_device(struct btd_device *dev, gboolean streaming)
 {
@@ -479,7 +477,7 @@ static gboolean discov_timeout_handler(gpointer user_data)
 
 	adapter->discov_timeout_id = 0;
 
-	set_discoverable(NULL, NULL, FALSE, user_data);
+	adapter_ops->set_discoverable(adapter->dev_id, FALSE);
 
 	modestr = mode2str(MODE_CONNECTABLE);
 	write_device_mode(&adapter->bdaddr, modestr);
