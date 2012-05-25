@@ -59,7 +59,6 @@ struct gatt_service {
 	bdaddr_t dba;
 	char *path;
 	GSList *primary;
-	GAttrib *attrib;
 	DBusMessage *msg;
 	int psm;
 	gboolean listen;
@@ -165,8 +164,9 @@ static void gatt_service_free(void *user_data)
 
 	g_slist_foreach(gatt->primary, (GFunc) primary_free, NULL);
 	g_slist_free(gatt->primary);
-	g_attrib_unref(gatt->attrib);
+	g_attrib_unref(device_get_attrib(gatt->dev));
 	g_free(gatt->path);
+	device_set_gatt(gatt->dev, NULL);
 	btd_device_unref(gatt->dev);
 	dbus_connection_unref(gatt->conn);
 	g_free(gatt);
@@ -187,7 +187,7 @@ static void characteristic_clean(gpointer user_data, gpointer extra_data)
 		g_dbus_send_message(chr->prim->gatt->conn, reply);
 		chr->msg = NULL;
         if (!on_destroy)
-            g_attrib_unref(chr->prim->gatt->attrib);
+            g_attrib_unref(device_get_attrib(chr->prim->gatt->dev));
 	}
 }
 
@@ -277,7 +277,7 @@ static void watcher_exit(DBusConnection *conn, void *user_data)
 
 	prim->watchers = g_slist_remove(prim->watchers, watcher);
 
-	g_attrib_unref(gatt->attrib);
+	g_attrib_unref(device_get_attrib(gatt->dev));
 }
 
 static int characteristic_set_value(struct characteristic *chr,
@@ -360,7 +360,7 @@ static void events_handler(const uint8_t *pdu, uint16_t len,
 	switch (pdu[0]) {
 	case ATT_OP_HANDLE_IND:
 		olen = enc_confirmation(opdu, sizeof(opdu));
-		g_attrib_send(gatt->attrib, 0, opdu[0], opdu, olen,
+		g_attrib_send(device_get_attrib(gatt->dev), 0, opdu[0], opdu, olen,
 						NULL, NULL, NULL);
 	case ATT_OP_HANDLE_NOTIFY:
 		if (characteristic_set_value(chr, &pdu[3], len - 3) < 0)
@@ -400,7 +400,7 @@ static void attrib_destroy(gpointer user_data)
 
 	g_slist_foreach(gatt->primary, (GFunc) primary_attrib_destroy, NULL);
 
-	gatt->attrib = NULL;
+	device_set_attrib(gatt->dev, NULL);
 }
 
 static void stop_discovery(gpointer user_data, gpointer extra_data)
@@ -422,7 +422,7 @@ static void stop_discovery(gpointer user_data, gpointer extra_data)
 
 	prim->discovery_msg = NULL;
 
-	g_attrib_unref(gatt->attrib);
+	g_attrib_unref(device_get_attrib(gatt->dev));
 }
 
 static gboolean stop_discovery_timeout(gpointer user_data) {
@@ -443,17 +443,24 @@ static void attrib_disconnect(gpointer user_data)
 
 	g_slist_foreach(gatt->primary, stop_discovery, NULL);
 
-	g_attrib_set_disconnect_function(gatt->attrib, NULL, NULL);
+	g_attrib_set_disconnect_function(device_get_attrib(gatt->dev), NULL, NULL);
 
 	g_slist_foreach(gatt->primary, primary_clean, &on_destroy);
 
 	/* Remote initiated disconnection only */
-	g_attrib_unref(gatt->attrib);
+	g_attrib_unref(device_get_attrib(gatt->dev));
 }
 
 static void connect_cb(GIOChannel *chan, GError *gerr, gpointer user_data)
 {
 	struct gatt_service *gatt = user_data;
+	GAttrib *attrib = NULL;
+
+	if (gatt)
+		attrib = device_get_attrib(gatt->dev);
+
+	if (attrib == NULL)
+		return;
 
 	if (gerr) {
 		if (gatt->msg) {
@@ -466,23 +473,18 @@ static void connect_cb(GIOChannel *chan, GError *gerr, gpointer user_data)
 		goto fail;
 	}
 
-	if (gatt->attrib == NULL)
-		return;
-
 	/* Listen mode: used for notification and indication */
 	if (gatt->listen == TRUE) {
-		g_attrib_register(gatt->attrib,
-					ATT_OP_HANDLE_NOTIFY,
-					events_handler, gatt, NULL);
-		g_attrib_register(gatt->attrib,
-					ATT_OP_HANDLE_IND,
+		g_attrib_register(attrib, ATT_OP_HANDLE_NOTIFY,
+						  events_handler, gatt, NULL);
+		g_attrib_register(attrib, ATT_OP_HANDLE_NOTIFY,
 					events_handler, gatt, NULL);
 		return;
 	}
 
 	return;
 fail:
-	g_attrib_unref(gatt->attrib);
+	g_attrib_unref(attrib);
 }
 
 static int l2cap_connect(struct gatt_service *gatt, GError **gerr,
@@ -490,9 +492,13 @@ static int l2cap_connect(struct gatt_service *gatt, GError **gerr,
 {
 	GIOChannel *io;
 	struct bt_le_params *params = NULL;
+	GAttrib *attrib = NULL;
 
-	if (gatt->attrib != NULL) {
-		gatt->attrib = g_attrib_ref(gatt->attrib);
+	if (gatt)
+		attrib = device_get_attrib(gatt->dev);
+
+	if (attrib) {
+		device_set_attrib(gatt->dev, g_attrib_ref(attrib));
 		gatt->listen = listen;
 		prim->connected = TRUE;
 		return 0;
@@ -535,14 +541,13 @@ static int l2cap_connect(struct gatt_service *gatt, GError **gerr,
 	if (!io)
 		return -1;
 
-	gatt->attrib = g_attrib_new(io);
-	gatt->attrib = g_attrib_ref(gatt->attrib);
+	attrib = g_attrib_ref(g_attrib_new(io));
+	device_set_attrib(gatt->dev, attrib);
 	g_io_channel_unref(io);
 	gatt->listen = listen;
 
-	g_attrib_set_destroy_function(gatt->attrib, attrib_destroy, gatt);
-	g_attrib_set_disconnect_function(gatt->attrib, attrib_disconnect,
-									gatt);
+	g_attrib_set_destroy_function(attrib, attrib_destroy, gatt);
+	g_attrib_set_disconnect_function(attrib, attrib_disconnect, gatt);
 
 	prim->connected = TRUE;
 
@@ -623,7 +628,7 @@ static void update_char_value(guint8 status, const guint8 *pdu,
 	}
 
 	if (expected)
-		g_attrib_unref(gatt->attrib);
+		g_attrib_unref(device_get_attrib(gatt->dev));
 
 	g_free(current);
 }
@@ -659,7 +664,7 @@ static DBusMessage *register_watcher(DBusConnection *conn,
 
 	reply = dbus_message_new_method_return(msg);
 
-	g_attrib_unref(prim->gatt->attrib);
+	g_attrib_unref(device_get_attrib(prim->gatt->dev));
 
 	return reply;
 }
@@ -740,7 +745,7 @@ static void gatt_write_char_resp(guint8 status, const guint8 *pdu,
 			}
 		}
 
-		g_attrib_unref(gatt->attrib);
+		g_attrib_unref(device_get_attrib(gatt->dev));
 
 	} else {
 		DBG("Characteristics Dbus message is NULL");
@@ -793,7 +798,7 @@ static void gatt_write_cli_conf_resp(guint8 status, const guint8 *pdu,
 			}
 		}
 
-		g_attrib_unref(gatt->attrib);
+		g_attrib_unref(device_get_attrib(gatt->dev));
 
 	} else {
 		DBG("Characteristics Dbus message is NULL");
@@ -840,17 +845,17 @@ static DBusMessage *set_value(DBusConnection *conn, DBusMessage *msg,
 
 		chr->msg = dbus_message_ref(msg);
 
-		gatt_write_char(gatt->attrib, chr->handle, value,
+		gatt_write_char(device_get_attrib(gatt->dev), chr->handle, value,
 				len, gatt_write_char_resp, qvalue);
 	} else {
-		gatt_write_char(gatt->attrib, chr->handle, value,
+		gatt_write_char(device_get_attrib(gatt->dev), chr->handle, value,
 						len, NULL,  qvalue);
 	}
 
 	if (isRequest)
 		return NULL;
 	else {
-		g_attrib_unref(gatt->attrib);
+		g_attrib_unref(device_get_attrib(gatt->dev));
 		return dbus_message_new_method_return(msg);
 	}
 }
@@ -892,7 +897,7 @@ static DBusMessage *set_cli_conf(DBusConnection *conn, DBusMessage *msg,
 
 	chr->msg = dbus_message_ref(msg);
 
-	gatt_write_char(gatt->attrib, chr->desc.cli_conf_hndl, value, len,
+	gatt_write_char(device_get_attrib(gatt->dev), chr->desc.cli_conf_hndl, value, len,
 					gatt_write_cli_conf_resp, qvalue);
 
 	return NULL;
@@ -1008,7 +1013,7 @@ static DBusMessage *fetch_value(DBusConnection *conn,
 
 	chr->msg = dbus_message_ref(msg);
 
-	gatt_read_char(gatt->attrib, chr->handle, 0, update_char_value, qvalue);
+	gatt_read_char(device_get_attrib(gatt->dev), chr->handle, 0, update_char_value, qvalue);
 
 	return NULL;
 }
@@ -1185,7 +1190,7 @@ static void update_char_cli_conf(guint8 status, const guint8 *pdu, guint16 len,
 				(void *) &chr->desc.cli_conf, sizeof(chr->desc.cli_conf));
 
 done:
-	g_attrib_unref(gatt->attrib);
+	g_attrib_unref(device_get_attrib(gatt->dev));
 	g_free(current);
 }
 
@@ -1209,7 +1214,7 @@ static void update_char_desc(guint8 status, const guint8 *pdu, guint16 len,
 				(void *) chr->desc.desc, len);
 	}
 
-	g_attrib_unref(gatt->attrib);
+	g_attrib_unref(device_get_attrib(gatt->dev));
 	g_free(current);
 }
 
@@ -1235,7 +1240,7 @@ static void update_char_format(guint8 status, const guint8 *pdu, guint16 len,
 				(void *) chr->desc.format, sizeof(*chr->desc.format));
 
 done:
-	g_attrib_unref(gatt->attrib);
+	g_attrib_unref(device_get_attrib(gatt->dev));
 	g_free(current);
 }
 
@@ -1254,13 +1259,17 @@ static void descriptor_cb(guint8 status, const guint8 *pdu, guint16 plen,
 	struct query_data *current = user_data;
 	struct gatt_service *gatt = current->prim->gatt;
 	struct att_data_list *list;
+	GAttrib *attrib = NULL;
 	guint8 format;
 	int i;
 
+	DBG("Find Information Response received");
+
+	if (gatt)
+		attrib = device_get_attrib(gatt->dev);
+
 	if (status != 0)
 		goto done;
-
-	DBG("Find Information Response received");
 
 	list = dec_find_info_resp(pdu, plen, &format);
 	if (list == NULL)
@@ -1288,28 +1297,32 @@ static void descriptor_cb(guint8 status, const guint8 *pdu, guint16 plen,
 		qfmt->chr = current->chr;
 		qfmt->handle = handle;
 
+
 		if (uuid_desc16_cmp(&uuid, GATT_CLIENT_CHARAC_CFG_UUID) == 0) {
-			gatt->attrib = g_attrib_ref(gatt->attrib);
+			attrib = g_attrib_ref(attrib);
 			current->chr->desc.cli_conf_hndl = handle;
-			gatt_read_char(gatt->attrib, handle, 0,
+			gatt_read_char(attrib, handle, 0,
 						   update_char_cli_conf, qfmt);
 		} else if (uuid_desc16_cmp(&uuid, GATT_CHARAC_USER_DESC_UUID) == 0) {
-			gatt->attrib = g_attrib_ref(gatt->attrib);
-			gatt_read_char(gatt->attrib, handle, 0, update_char_desc,
+			attrib = g_attrib_ref(attrib);
+			gatt_read_char(attrib, handle, 0, update_char_desc,
 									qfmt);
 		} else if (uuid_desc16_cmp(&uuid, GATT_CHARAC_FMT_UUID) == 0) {
-			gatt->attrib = g_attrib_ref(gatt->attrib);
-			gatt_read_char(gatt->attrib, handle, 0,
+			attrib = g_attrib_ref(attrib);
+			gatt_read_char(attrib, handle, 0,
 						update_char_format, qfmt);
 		} else
 			g_free(qfmt);
+
 	}
+
+	device_set_attrib(gatt->dev, attrib);
 
 	store_characteristics(gatt, current->prim);
 
 	att_data_list_free(list);
 done:
-	g_attrib_unref(gatt->attrib);
+	g_attrib_unref(attrib);
 	g_free(current);
 }
 
@@ -1319,6 +1332,10 @@ static void update_all_chars(struct primary *prim)
 	struct characteristic *chr;
 	struct gatt_service *gatt = prim->gatt;
 	GSList *l;
+	GAttrib *attrib = NULL;
+
+	if (gatt)
+		attrib = device_get_attrib(gatt->dev);
 
 	for(l = prim->chars; l; l = l->next) {
 		chr = l->data;
@@ -1327,8 +1344,8 @@ static void update_all_chars(struct primary *prim)
 		qdesc->prim = prim;
 		qdesc->chr = chr;
 
-		gatt->attrib = g_attrib_ref(gatt->attrib);
-		gatt_find_info(gatt->attrib, chr->handle + 1, chr->end, descriptor_cb,
+		attrib = g_attrib_ref(attrib);
+		gatt_find_info(attrib, chr->handle + 1, chr->end, descriptor_cb,
 					   qdesc);
 
 		qvalue = g_new0(struct query_data, 1);
@@ -1336,10 +1353,12 @@ static void update_all_chars(struct primary *prim)
 		qvalue->chr = chr;
 		qvalue->last = (l->next==NULL);
 
-		gatt->attrib = g_attrib_ref(gatt->attrib);
+		attrib = g_attrib_ref(attrib);
 
-		gatt_read_char(gatt->attrib, chr->handle, 0, update_char_value, qvalue);
+		gatt_read_char(attrib, chr->handle, 0, update_char_value, qvalue);
 	}
+
+	device_set_attrib(gatt->dev, attrib);
 
 	/* Start timer */
 	prim->discovery_timer = g_timeout_add_seconds(GATT_TIMEOUT,
@@ -1406,8 +1425,10 @@ static void char_discovered_cb(GSList *characteristics, guint8 status,
 	return;
 
 fail:
-	g_dbus_send_message(gatt->conn, reply);
-	g_attrib_unref(gatt->attrib);
+	if (gatt) {
+		g_dbus_send_message(gatt->conn, reply);
+		g_attrib_unref(device_get_attrib(gatt->dev));
+	}
 	g_free(current);
 }
 
@@ -1439,7 +1460,7 @@ static DBusMessage *discover_char(DBusConnection *conn, DBusMessage *msg,
 
 	prim->discovery_msg = dbus_message_ref(msg);
 
-	gatt_discover_char(gatt->attrib, att->start, att->end, NULL,
+	gatt_discover_char(device_get_attrib(gatt->dev), att->start, att->end, NULL,
 						char_discovered_cb, qchr);
 
 	return NULL;
@@ -1487,12 +1508,11 @@ static DBusMessage *prim_get_properties(DBusConnection *conn, DBusMessage *msg,
 	return reply;
 }
 
-static DBusMessage *connect_request_cancel(DBusConnection *conn,
+DBusMessage *le_connect_request_cancel(DBusConnection *conn,
 					DBusMessage *msg, void *data)
 {
-	struct primary *prim = data;
-	struct gatt_service *gatt = prim->gatt;
-	struct btd_device *device = gatt->dev;
+	struct btd_device *device = data;
+	GAttrib *attrib = device_get_attrib(device);
 
 	if (device_get_type(device) != DEVICE_TYPE_LE)
 		return btd_error_not_supported(msg);
@@ -1500,25 +1520,75 @@ static DBusMessage *connect_request_cancel(DBusConnection *conn,
 	if (device_is_connected(device))
 		return btd_error_already_connected(msg);
 
-	if (!gatt->attrib)
+	if (!attrib)
 		return btd_error_not_connected(msg);
 
 	/* This closes connection if connect request was only reference */
-	g_attrib_ref(gatt->attrib);
-	g_attrib_unref(gatt->attrib);
+	g_attrib_unref(attrib);
 
 	return dbus_message_new_method_return(msg);
 }
 
-static DBusMessage *connect_request(DBusConnection *conn,
+static DBusMessage *cli_le_connect_request_cancel(DBusConnection *conn,
 					DBusMessage *msg, void *data)
 {
 	struct primary *prim = data;
-	struct gatt_service *gatt = prim->gatt;
-	struct btd_device *device = gatt->dev;
+
+	if (!prim || !prim->gatt || !prim->gatt->dev)
+		return btd_error_failed(msg, "Connect Cancel Request Failed");
+
+	return le_connect_request_cancel(conn, msg, prim->gatt->dev);
+}
+
+DBusMessage *le_disconnect_request(DBusConnection *conn,
+					DBusMessage *msg, void *data)
+{
+	struct btd_device *device = data;
+	GAttrib *attrib = device_get_attrib(device);
+
+	if (device_get_type(device) != DEVICE_TYPE_LE)
+		return btd_error_not_supported(msg);
+
+	if (!device_is_connected(device) || !attrib)
+		return btd_error_not_connected(msg);
+
+	/* This closes connection if it has no other references */
+	g_attrib_unref(attrib);
+
+	return dbus_message_new_method_return(msg);
+}
+
+static DBusMessage *cli_le_disconnect(DBusConnection *conn,
+					DBusMessage *msg, void *data)
+{
+	struct primary *prim = data;
+
+	if (!prim || !prim->gatt || !prim->gatt->dev)
+		return btd_error_failed(msg, "Disconnect Request Failed");
+
+	return le_disconnect_request(conn, msg, prim->gatt->dev);
+}
+
+DBusMessage *le_connect_request(DBusConnection *conn,
+					DBusMessage *msg, void *data)
+{
+	struct btd_device *device = data;
+	struct gatt_service *gatt = device_get_gatt(device);
 	struct bt_le_params params;
+	GAttrib *attrib;
 	GIOChannel *io;
 	bdaddr_t src;
+
+	if (device_get_type(device) != DEVICE_TYPE_LE)
+		return btd_error_not_supported(msg);
+
+	if (!gatt)
+		gatt = gatt_create(conn, device, 0);
+
+	if (!gatt)
+		goto fail;
+
+	device_set_gatt(device, gatt);
 
 	if (dbus_message_get_args(msg, NULL,
 			DBUS_TYPE_BYTE, &params.prohibit_remote_chg,
@@ -1535,11 +1605,15 @@ static DBusMessage *connect_request(DBusConnection *conn,
 			DBUS_TYPE_INVALID) == FALSE)
 		return btd_error_invalid_args(msg);
 
-	if (device_get_type(device) != DEVICE_TYPE_LE)
-		return btd_error_not_supported(msg);
+	if (device_is_connected(device)) {
+		if (device_get_attrib(device))
+			return btd_error_already_connected(msg);
+		else
+			return btd_error_failed(msg, "Invalid State");
+	}
 
-	if (gatt->attrib || device_is_connected(device))
-		return btd_error_already_connected(msg);
+	if (device_get_attrib(device))
+		return btd_error_in_progress(msg);
 
 	adapter_get_address(device_get_adapter(device), &src);
 
@@ -1555,16 +1629,27 @@ static DBusMessage *connect_request(DBusConnection *conn,
 	if (!io)
 		goto fail;
 
-	gatt->attrib = g_attrib_new(io);
+	attrib = g_attrib_new(io);
+	device_set_attrib(device, attrib);
 	g_io_channel_unref(io);
-	g_attrib_set_destroy_function(gatt->attrib, attrib_destroy, gatt);
-	g_attrib_set_disconnect_function(gatt->attrib, attrib_disconnect,
-									gatt);
+	g_attrib_set_destroy_function(attrib, attrib_destroy, gatt);
+	g_attrib_set_disconnect_function(attrib, attrib_disconnect, gatt);
 
 	return dbus_message_new_method_return(msg);
 
 fail:
 	return btd_error_failed(msg, "Connect Request Failed");
+}
+
+static DBusMessage *cli_le_connect_request(DBusConnection *conn,
+					DBusMessage *msg, void *data)
+{
+	struct primary *prim = data;
+
+	if (!prim || !prim->gatt || !prim->gatt->dev)
+		return btd_error_failed(msg, "Connect Request Failed");
+
+	return le_connect_request(conn, msg, prim->gatt->dev);
 }
 
 static DBusMessage *disconnect_service(DBusConnection *conn, DBusMessage *msg,
@@ -1599,7 +1684,7 @@ static DBusMessage *disconnect_service(DBusConnection *conn, DBusMessage *msg,
 		if (prim->connected)
 			goto done;
 	}
-	g_attrib_unref(prim->gatt->attrib);
+	g_attrib_unref(device_get_attrib(prim->gatt->dev));
 
 done:
 	return dbus_message_new_method_return(msg);
@@ -1614,8 +1699,9 @@ static GDBusMethodTable prim_methods[] = {
 						unregister_watcher	},
 	{ "GetProperties",	"",	"a{sv}",prim_get_properties	},
 	{ "Disconnect",	"",	"", disconnect_service	},
-	{ "ConnectReq",	"yyqqqqqqqqq", "", connect_request },
-	{ "ConnectCancel", "", "", connect_request_cancel },
+	{ "ConnectReq",	"yyqqqqqqqqq", "", cli_le_connect_request },
+	{ "ConnectCancel", "", "", cli_le_connect_request_cancel },
+	{ "DisconnectLe", "", "", cli_le_disconnect },
 	{ }
 };
 
@@ -1646,31 +1732,43 @@ static GSList *register_primaries(struct gatt_service *gatt, GSList *primaries)
 	return paths;
 }
 
+struct gatt_service *gatt_create(DBusConnection *connection,
+					struct btd_device *device, int psm)
+{
+	struct btd_adapter *adapter = device_get_adapter(device);
+	const char *path = device_get_path(device);
+	struct gatt_service *gatt = g_new0(struct gatt_service, 1);
+
+	if (gatt) {
+		adapter_get_address(adapter, &gatt->sba);
+		device_get_address(device, &gatt->dba);
+		gatt->dev = btd_device_ref(device);
+		gatt->conn = dbus_connection_ref(connection);
+		gatt->listen = FALSE;
+		gatt->path = g_strdup(path);
+		gatt->psm = psm;
+
+		device_set_gatt(device, gatt);
+	}
+
+	return gatt;
+}
+
 GSList *attrib_client_register(DBusConnection *connection,
 					struct btd_device *device, int psm,
 					GAttrib *attrib, GSList *primaries)
 {
-	struct btd_adapter *adapter = device_get_adapter(device);
-	const char *path = device_get_path(device);
-	struct gatt_service *gatt;
+	struct gatt_service *gatt = device_get_gatt(device);
 	bdaddr_t sba, dba;
 
 	DBG("Register Client");
 
-	adapter_get_address(adapter, &sba);
-	device_get_address(device, &dba);
+	if (!gatt)
+		gatt = gatt_create(connection, device, psm);
 
-	gatt = g_new0(struct gatt_service, 1);
-	gatt->dev = btd_device_ref(device);
-	gatt->conn = dbus_connection_ref(connection);
-	gatt->listen = FALSE;
-	gatt->path = g_strdup(path);
-	bacpy(&gatt->sba, &sba);
-	bacpy(&gatt->dba, &dba);
-	gatt->psm = psm;
-
+	//TODO: check if this operation is unnecessary
 	if (attrib)
-		gatt->attrib = g_attrib_ref(attrib);
+		g_attrib_ref(attrib);
 
 	gatt_services = g_slist_append(gatt_services, gatt);
 
@@ -1680,15 +1778,14 @@ GSList *attrib_client_register(DBusConnection *connection,
 void attrib_client_unregister(struct btd_device *device)
 {
 	struct gatt_service *gatt;
-	GSList *l, *lp, *lc;
+	GSList *lp, *lc;
 
 	DBG("Unregister Client");
 
-	l = g_slist_find_custom(gatt_services, device, gatt_dev_cmp);
-	if (!l)
+	gatt = device_get_gatt(device);
+	if (!gatt)
 		return;
 
-	gatt = l->data;
 	gatt_services = g_slist_remove(gatt_services, gatt);
 
 	for (lp = gatt->primary; lp; lp = lp->next) {
@@ -1738,7 +1835,7 @@ GAttrib *attrib_client_find (struct btd_device *device) {
 
 	gatt = l->data;
 
-	return gatt->attrib;
+	return device_get_attrib(gatt->dev);
 }
 
 int attrib_client_update (struct btd_device *device,
@@ -1764,10 +1861,10 @@ int attrib_client_update (struct btd_device *device,
 
 	gatt = l->data;
 
-	if (!gatt || !gatt->attrib)
+	if (!gatt || !device_get_attrib(gatt->dev))
 		return -1;
 
-	io = g_attrib_get_channel(gatt->attrib);
+	io = g_attrib_get_channel(device_get_attrib(gatt->dev));
 
 	if (!io)
 		return -1;

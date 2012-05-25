@@ -1109,7 +1109,6 @@ static void adapter_update_devices(struct btd_adapter *adapter)
 		struct btd_device *dev = l->data;
 		devices[i] = (char *) device_get_path(dev);
 	}
-
 	emit_array_property_changed(connection, adapter->path,
 					ADAPTER_INTERFACE, "Devices",
 					DBUS_TYPE_OBJECT_PATH, &devices, i);
@@ -1272,7 +1271,6 @@ static struct btd_device *adapter_create_device(DBusConnection *conn,
 			DBUS_TYPE_INVALID);
 
 	adapter_update_devices(adapter);
-
 	return device;
 }
 
@@ -1835,6 +1833,72 @@ static DBusMessage *create_device(DBusConnection *conn,
 	}
 
 	return NULL;
+
+failed:
+	if (err == -ENOTCONN) {
+		/* Device is not connectable */
+		const char *path = device_get_path(device);
+
+		reply = dbus_message_new_method_return(msg);
+
+		dbus_message_append_args(reply,
+				DBUS_TYPE_OBJECT_PATH, &path,
+				DBUS_TYPE_INVALID);
+	} else
+		reply = btd_error_failed(msg, strerror(-err));
+
+	return reply;
+}
+
+static DBusMessage *create_le_device(DBusConnection *conn,
+					DBusMessage *msg, void *data)
+{
+	struct btd_adapter *adapter = data;
+	struct btd_device *device;
+	const gchar *address;
+	DBusMessage *reply;
+	struct remote_dev_info *dev, match;
+	const gchar *dev_path;
+	int err;
+
+	if (dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &address,
+						DBUS_TYPE_INVALID) == FALSE)
+		return btd_error_invalid_args(msg);
+
+	if (check_address(address) < 0)
+		return btd_error_invalid_args(msg);
+
+	if (!adapter->up)
+		return btd_error_not_ready(msg);
+
+	if (adapter_find_device(adapter, address))
+		return btd_error_already_exists(msg);
+
+	memset(&match, 0, sizeof(struct remote_dev_info));
+	str2ba(address, &match.bdaddr);
+	match.name_status = NAME_ANY;
+
+	dev = adapter_search_found_devices(adapter, &match);
+	if (dev && !dev->le)
+		return btd_error_not_supported(msg);
+
+	DBG("%s", address);
+
+	device = create_device_internal(conn, adapter, address, &err);
+	if (!device)
+		goto failed;
+
+	reply = dbus_message_new_method_return(msg);
+
+	if (!reply)
+		return btd_error_failed;
+
+	dev_path = device_get_path(device);
+
+	dbus_message_append_args(reply, DBUS_TYPE_OBJECT_PATH, &dev_path,
+					DBUS_TYPE_INVALID);
+
+	return reply;
 
 failed:
 	if (err == -ENOTCONN) {
@@ -3011,6 +3075,7 @@ static GDBusMethodTable adapter_methods[] = {
 	{ "AddReservedServiceRecords",   "au",    "au",    add_reserved_service_records  },
 	{ "RemoveReservedServiceRecords", "au",    "",	remove_reserved_service_records  },
 	{ "DisconnectAllConnections", "",    "",	adapter_disconnect_all_connections  },
+	{ "CreateLeDevice",	"s",	"o",	create_le_device},
 	{ }
 };
 

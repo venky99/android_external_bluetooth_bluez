@@ -133,6 +133,8 @@ struct btd_device {
 	char		name[MAX_NAME_LENGTH + 1];
 	char		*alias;
 	struct btd_adapter	*adapter;
+	struct _GAttrib *attrib;
+	struct gatt_service *gatt;
 	GSList		*uuids;
 	GSList		*services;		/* Primary services path */
 	GSList		*primaries;	    /* List of primary services */
@@ -1131,6 +1133,9 @@ static GDBusMethodTable device_methods[] = {
 	{ "SetLEConnectParams",	"yyqqqqqqqqq", "", set_connection_params },
 	{ "UpdateLEConnectionParams",	"yqqqq", "", update_connection_params },
 	{ "LeDiscoverPrimaryServices", "", "", le_discover_primary_services },
+	{ "LeConnectReq",	"yyqqqqqqqqq", "", le_connect_request },
+	{ "LeConnectCancel", "", "", le_connect_request_cancel },
+	{ "LeDisconnectReq", "", "", le_disconnect_request },
 	{ }
 };
 
@@ -2306,7 +2311,7 @@ int device_browse_primary(struct btd_device *device, DBusConnection *conn,
 	req = g_new0(struct browse_req, 1);
 	req->device = btd_device_ref(device);
 
-	attrib  = attrib_client_find (device);
+	attrib  = device_get_attrib(device);
 	if (attrib) {
 		gatt_discover_primary(attrib, NULL, primary_cb, req);
 		device->browse = req;
@@ -2415,6 +2420,34 @@ int device_browse_sdp(struct btd_device *device, DBusConnection *conn,
 					sdata);
 
 	return err;
+}
+
+struct _GAttrib *device_get_attrib(struct btd_device *device)
+{
+	if (!device)
+		return NULL;
+
+	return device->attrib;
+}
+
+void device_set_attrib(struct btd_device *device, struct _GAttrib *attrib)
+{
+	if (device)
+		device->attrib = attrib;
+}
+
+struct gatt_service *device_get_gatt(struct btd_device *device)
+{
+	if (!device)
+		return NULL;
+
+	return device->gatt;
+}
+
+void device_set_gatt(struct btd_device *device, struct gatt_service *gatt)
+{
+	if (device)
+		device->gatt = gatt;
 }
 
 struct btd_adapter *device_get_adapter(struct btd_device *device)
