@@ -2421,8 +2421,8 @@ gboolean a2dp_cancel(struct audio_device *dev, unsigned int id)
 
 		if (!setup->cb) {
 			DBG("aborting setup %p", setup);
-			avdtp_abort(setup->session, setup->stream);
-			return TRUE;
+			if (avdtp_abort(setup->session, setup->stream) == 0)
+				return TRUE;
 		}
 
 		setup_unref(setup);
