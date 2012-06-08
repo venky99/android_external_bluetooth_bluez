@@ -699,6 +699,28 @@ fail:
 	return btd_error_failed(msg, strerror(-err));
 }
 
+static DBusMessage *le_discover_primary_services(DBusConnection *conn,
+					DBusMessage *msg, void *user_data)
+{
+	struct btd_device *device = user_data;
+	int err;
+
+	if (device->browse)
+		return btd_error_in_progress(msg);
+
+	DBG("Device type %s", (device->type == DEVICE_TYPE_LE) ? "LE":"BR/EDR");
+
+	if (device->type != DEVICE_TYPE_LE) {
+		return btd_error_not_supported(msg);
+	}
+
+	err = device_browse_primary(device, NULL, NULL, FALSE);
+	if (err < 0)
+		return btd_error_failed(msg, strerror(-err));
+
+	return dbus_message_new_method_return(msg);
+}
+
 static const char *browse_request_get_requestor(struct browse_req *req)
 {
 	if (!req->msg)
@@ -1108,6 +1130,7 @@ static GDBusMethodTable device_methods[] = {
 	{ "UnregisterRssiUpdateWatcher",	"",	"",	unregister_rssi_watcher	},
 	{ "SetLEConnectParams",	"yyqqqqqqqqq", "", set_connection_params },
 	{ "UpdateLEConnectionParams",	"yqqqq", "", update_connection_params },
+	{ "LeDiscoverPrimaryServices", "", "", le_discover_primary_services },
 	{ }
 };
 
@@ -2197,13 +2220,12 @@ static void primary_cb(GSList *services, guint8 status, gpointer user_data)
 	struct btd_device *device = req->device;
 	GSList *l, *uuids = NULL;
 
-	if (!req->msg)
-		goto done;
-
 	if (status) {
-		DBusMessage *reply;
-		reply = btd_error_failed(req->msg, att_ecode2str(status));
-		g_dbus_send_message(req->conn, reply);
+		if (req->msg) {
+			DBusMessage *reply;
+			reply = btd_error_failed(req->msg, att_ecode2str(status));
+			g_dbus_send_message(req->conn, reply);
+		}
 		goto done;
 	}
 
@@ -2220,7 +2242,8 @@ static void primary_cb(GSList *services, guint8 status, gpointer user_data)
 
 	g_slist_free(uuids);
 
-	create_device_reply(device, req);
+	if (req->msg)
+		create_device_reply(device, req);
 
 	store_services(device);
 
