@@ -534,6 +534,9 @@ guint g_attrib_send(GAttrib *attrib, guint id, guint8 opcode,
 {
 	struct command *c;
 
+	if(!attrib || !pdu)
+		return 0;
+
 	c = g_try_new0(struct command, 1);
 	if (c == NULL)
 		return 0;
