@@ -3075,6 +3075,7 @@ static void dbus_writecmd(struct gatt_channel *channel, uint16_t handle,
 
 	dbus_connection_send(connection, channel->msg, NULL);
 	dbus_message_unref(channel->msg);
+	channel->msg = NULL;
 }
 
 static int write_value(struct gatt_channel *channel, gboolean resp,
