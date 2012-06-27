@@ -1159,7 +1159,7 @@ struct uart_t uart[] = {
 				FLOW_CTL, DISABLE_PM, NULL, bcm2035  },
 
 	{ "ath3k",    0x0000, 0x0000, HCI_UART_ATH3K, 115200, 115200,
-			FLOW_CTL, DISABLE_PM, NULL, ath3k_ps, ath3k_pm  },
+			FLOW_CTL, DISABLE_PM, NULL, ath3k_ps, NULL  },
 
 	/* QUALCOMM BTS */
 	{ "qualcomm",   0x0000, 0x0000, HCI_UART_H4,   115200, 115200,

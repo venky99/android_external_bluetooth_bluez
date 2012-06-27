@@ -42,7 +42,7 @@
 #define TRUE    1
 #define FALSE   0
 
-#define FW_PATH "/lib/firmware/ar3k/"
+#define FW_PATH "/etc/firmware/ar3k/"
 
 struct ps_cfg_entry {
 	uint32_t id;
@@ -827,8 +827,11 @@ static int ath_ps_download(int fd)
 
 	stream = fopen(ps_file, "r");
 	if (!stream) {
-		perror("firmware file open error\n");
-		err = -EILSEQ;
+		printf("firmware file open error:%s, ver:%x\n",ps_file, rom_version);
+		if (rom_version == 0x1020201)
+			err = 0;
+		else
+			err = -EILSEQ;
 		goto download_cmplete;
 	}
 	tag_count = ath_parse_ps(stream);
@@ -964,6 +967,17 @@ int ath3k_init(int fd, int speed, int init_speed, char *bdaddr,
 	unsigned char cmd[MAX_CMD_LEN], rsp[HCI_MAX_EVENT_SIZE];
 	unsigned char *ptr = cmd + 1;
 	hci_command_hdr *ch = (void *)ptr;
+        int flags = 0;
+
+        if (ioctl(fd, TIOCMGET, &flags) < 0) {
+                perror("TIOCMGET failed in init\n");
+                return -1;
+        }
+        flags |= TIOCM_RTS;
+        if (ioctl(fd, TIOCMSET, &flags) < 0) {
+                perror("TIOCMSET failed in init: HW Flow-on error\n");
+                return -1;
+        }
 
 	cmd[0] = HCI_COMMAND_PKT;
 
