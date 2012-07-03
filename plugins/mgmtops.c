@@ -1106,6 +1106,40 @@ static void set_discoverable_complete(int sk, uint16_t index, void *buf,
 	adapter_mode_changed(adapter, mode);
 }
 
+static void set_cod_complete(int sk, uint16_t index, void *buf,
+								size_t len)
+{
+	uint8_t *dev_class = (uint8_t *)buf;
+	struct controller_info *info;
+	struct btd_adapter *adapter;
+	uint32_t class;
+
+	if (len != 3) {
+		error("Too small set class of device event");
+		return;
+	}
+
+	if (index > max_index) {
+		error("Unexpected index %u in set_cod_complete", index);
+		return;
+	}
+
+	info = &controllers[index];
+
+	adapter = manager_find_adapter(&info->bdaddr);
+	if (!adapter)
+		return;
+
+	class = dev_class[0] | (dev_class[1] << 8)
+						| (dev_class[2] << 16);
+	if(class == 0x000000) {
+		DBG("invalid data");
+		return;
+	}
+
+	btd_adapter_class_changed(adapter, class);
+}
+
 static void set_connectable_complete(int sk, uint16_t index, void *buf,
 								size_t len)
 {
@@ -1370,7 +1404,9 @@ static void mgmt_cmd_complete(int sk, uint16_t index, void *buf, size_t len)
 		DBG("remove_uuid complete");
 		break;
 	case MGMT_OP_SET_DEV_CLASS:
-		DBG("set_dev_class complete");
+		DBG("set_dev_class complete: len is %d",len);
+		if (len > 0)
+			set_cod_complete(sk, index, ev->data, len);
 		break;
 	case MGMT_OP_SET_SERVICE_CACHE:
 		DBG("set_service_cache complete");
