@@ -108,6 +108,8 @@ void device_add_connection(struct btd_device *device, DBusConnection *conn,
 void device_remove_connection(struct btd_device *device, DBusConnection *conn);
 int device_get_handle(struct btd_device *device, int dd, uint16_t *handle);
 void device_update_rssi(struct btd_device *device, int8_t rssi);
+void device_update_le_conn_params(struct btd_device *device, uint16_t interval,
+					uint16_t latency, uint16_t timeout);
 void device_request_disconnect(struct btd_device *device, DBusMessage *msg);
 
 typedef void (*disconnect_watch) (struct btd_device *device, gboolean removal,
