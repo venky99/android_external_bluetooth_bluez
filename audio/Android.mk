@@ -29,6 +29,8 @@ LOCAL_CFLAGS:= \
 	-DANDROID \
 	-D__S_IFREG=0100000  # missing from bionic stat.h
 
+LOCAL_ADDITIONAL_DEPENDENCIES  := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+
 LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../lib \
 	$(LOCAL_PATH)/../gdbus \
@@ -36,6 +38,7 @@ LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../btio \
 	$(call include-path-for, glib) \
 	$(call include-path-for, dbus)
+LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
 
 LOCAL_SHARED_LIBRARIES := \
 	libbluetooth \
@@ -76,11 +79,13 @@ endif
 
 # to improve SBC performance
 LOCAL_CFLAGS:= -funroll-loops
+LOCAL_ADDITIONAL_DEPENDENCIES  := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
 
 LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../sbc \
 	../../../../frameworks/base/include \
 	system/bluetooth/bluez-clean-headers
+LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
 
 LOCAL_SHARED_LIBRARIES := \
 	libcutils
