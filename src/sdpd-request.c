@@ -6,7 +6,7 @@
  *  Copyright (C) 2002-2003  Maxim Krasnyansky <maxk@qualcomm.com>
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
  *  Copyright (C) 2002-2003  Stephen Crane <steve.crane@rococosoft.com>
- *  Copyright (C) 2010       Code Aurora Forum.  All Rights Reserved.
+ *  Copyright (C) 2010, 2012 Code Aurora Forum.  All Rights Reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -68,7 +68,11 @@ struct _sdp_cstate_list {
 
 static sdp_cstate_list_t *cstates;
 
-/* FIXME: should probably remove it when it's found */
+/* FIXME: should probably remove it when it's found
+	Handled for Service Search Attr request and Attribute Request
+	Ignored for Service request as it could be rarely used and
+	will not be a bigger response to have continuation state
+*/
 static sdp_buf_t *sdp_get_cached_rsp(sdp_cont_state_t *cstate)
 {
 	sdp_cstate_list_t *p;
@@ -77,6 +81,28 @@ static sdp_buf_t *sdp_get_cached_rsp(sdp_cont_state_t *cstate)
 		if (p->timestamp == cstate->timestamp)
 			return &p->buf;
 	return 0;
+}
+
+static void sdp_cstate_free_buf(sdp_buf_t *buf)
+{
+	sdp_cstate_list_t *p, *prev = NULL;
+
+	for (p = cstates; p; prev = p, p = p->next) {
+		if (&p->buf == buf) {
+			if (cstates == p) {
+				cstates = p->next;
+			}
+
+			if (buf->data != NULL)
+				free(buf->data);
+
+			if (prev != NULL) {
+				prev->next = p->next;
+			}
+			SDPDBG("Free cstate :  timestamp : %d", p->timestamp);
+			free(p);
+		}
+	}
 }
 
 static uint32_t sdp_cstate_alloc_buf(sdp_buf_t *buf)
@@ -723,8 +749,10 @@ static int service_attr_req(sdp_req_t *req, sdp_buf_t *buf)
 
 			SDPDBG("Response size : %d sending now : %d bytes sent so far : %d",
 				pCache->data_size, sent, cstate->cStateValue.maxBytesSent);
-			if (cstate->cStateValue.maxBytesSent == pCache->data_size)
+			if (cstate->cStateValue.maxBytesSent == pCache->data_size) {
 				cstate_size = sdp_set_cstate_pdu(buf, NULL);
+				sdp_cstate_free_buf(pCache);
+			}
 			else
 				cstate_size = sdp_set_cstate_pdu(buf, cstate);
 		} else {
@@ -914,8 +942,10 @@ static int service_search_attr_req(sdp_req_t *req, sdp_buf_t *buf)
 			memcpy(buf->data, pResponse + cstate->cStateValue.maxBytesSent, sent);
 			buf->data_size += sent;
 			cstate->cStateValue.maxBytesSent += sent;
-			if (cstate->cStateValue.maxBytesSent == pCache->data_size)
+			if (cstate->cStateValue.maxBytesSent == pCache->data_size) {
 				cstate_size = sdp_set_cstate_pdu(buf, NULL);
+				sdp_cstate_free_buf(pCache);
+			}
 			else
 				cstate_size = sdp_set_cstate_pdu(buf, cstate);
 		} else {
@@ -1038,7 +1068,7 @@ send_rsp:
 	if (send(req->sock, rsp.data, rsp.data_size, 0) < 0)
 		error("send: %s (%d)", strerror(errno), errno);
 
-	SDPDBG("Bytes Sent : %d", sent);
+	SDPDBG("Bytes Sent : %d", rsp.data_size);
 
 	free(rsp.data);
 	free(req->buf);
