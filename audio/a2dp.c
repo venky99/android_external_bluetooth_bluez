@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2010,2012 Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -41,17 +42,22 @@
 #include "manager.h"
 #include "avdtp.h"
 #include "sink.h"
+#include "control.h"
 #include "source.h"
 #include "unix.h"
 #include "media.h"
 #include "transport.h"
 #include "a2dp.h"
 #include "sdpd.h"
-
+#include "../src/device.h"
+#include "storage.h"
 /* The duration that streams without users are allowed to stay in
  * STREAMING state. */
 #define SUSPEND_TIMEOUT 5
 #define RECONFIGURE_TIMEOUT 500
+
+/* Content protection types */
+#define CP_TYPE_SCMS_T 0x0002
 
 #ifndef MIN
 # define MIN(x, y) ((x) < (y) ? (x) : (y))
@@ -60,6 +66,16 @@
 #ifndef MAX
 # define MAX(x, y) ((x) > (y) ? (x) : (y))
 #endif
+
+#define EDR_ACL_2_MBPS_MASK 0x02
+#define EDR_ACL_3_MBPS_MASK 0x04
+#define _3_SLOT_EDR_ACL_MASK 0x80
+#define _5_SLOT_EDR_ACL_MASK 0x01
+
+#define EDR_ACL_2_MBPS_BYTE 0x03
+#define EDR_ACL_3_MBPS_BYTE 0x03
+#define _3_SLOT_EDR_ACL_BYTE 0x04
+#define _5_SLOT_EDR_ACL_BYTE 0x05
 
 struct a2dp_sep {
 	struct a2dp_server *server;
@@ -74,6 +90,7 @@ struct a2dp_sep {
 	gboolean locked;
 	gboolean suspending;
 	gboolean starting;
+	gboolean remote_suspend;
 };
 
 struct a2dp_setup_cb {
@@ -113,6 +130,7 @@ struct a2dp_server {
 	uint16_t version;
 	gboolean sink_enabled;
 	gboolean source_enabled;
+	gboolean sbc_quality_high;
 };
 
 static GSList *servers = NULL;
@@ -485,6 +503,8 @@ static gboolean sbc_getcap_ind(struct avdtp *session, struct avdtp_local_sep *se
 {
 	struct a2dp_sep *a2dp_sep = user_data;
 	struct avdtp_service_capability *media_transport, *media_codec;
+	struct avdtp_service_capability *media_scms_t;
+	struct avdtp_content_protection_capability scms_t_cap;
 	struct sbc_codec_cap sbc_cap;
 
 	if (a2dp_sep->type == AVDTP_SEP_TYPE_SINK)
@@ -505,7 +525,7 @@ static gboolean sbc_getcap_ind(struct avdtp *session, struct avdtp_local_sep *se
 	sbc_cap.cap.media_codec_type = A2DP_CODEC_SBC;
 
 #ifdef ANDROID
-	sbc_cap.frequency = SBC_SAMPLING_FREQ_44100;
+	sbc_cap.frequency = SBC_SAMPLING_FREQ_48000;
 #else
 	sbc_cap.frequency = ( SBC_SAMPLING_FREQ_48000 |
 				SBC_SAMPLING_FREQ_44100 |
@@ -542,6 +562,13 @@ static gboolean sbc_getcap_ind(struct avdtp *session, struct avdtp_local_sep *se
 								NULL, 0);
 		*caps = g_slist_append(*caps, delay_reporting);
 	}
+	memset(&scms_t_cap, 0, sizeof(scms_t_cap));
+	scms_t_cap.cp_type_lsb = (CP_TYPE_SCMS_T & 0xFF);
+	scms_t_cap.cp_type_msb = (CP_TYPE_SCMS_T >> 8) & 0xFF;
+	media_scms_t = avdtp_service_cap_new(AVDTP_CONTENT_PROTECTION,
+						&scms_t_cap, 2);
+
+	*caps = g_slist_append(*caps, media_scms_t);
 
 	return TRUE;
 }
@@ -594,6 +621,8 @@ static gboolean mpeg_getcap_ind(struct avdtp *session,
 {
 	struct a2dp_sep *a2dp_sep = user_data;
 	struct avdtp_service_capability *media_transport, *media_codec;
+	struct avdtp_service_capability *media_scms_t;
+	struct avdtp_content_protection_capability scms_t_cap;
 	struct mpeg_codec_cap mpeg_cap;
 
 	if (a2dp_sep->type == AVDTP_SEP_TYPE_SINK)
@@ -640,6 +669,13 @@ static gboolean mpeg_getcap_ind(struct avdtp *session,
 								NULL, 0);
 		*caps = g_slist_append(*caps, delay_reporting);
 	}
+	memset(&scms_t_cap, 0, sizeof(scms_t_cap));
+	scms_t_cap.cp_type_lsb = (CP_TYPE_SCMS_T & 0xFF);
+	scms_t_cap.cp_type_msb = (CP_TYPE_SCMS_T >> 8) & 0xFF;
+	media_scms_t = avdtp_service_cap_new(AVDTP_CONTENT_PROTECTION,
+						&scms_t_cap, 2);
+
+	*caps = g_slist_append(*caps, media_scms_t);
 
 	return TRUE;
 }
@@ -941,6 +977,7 @@ static gboolean start_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 {
 	struct a2dp_sep *a2dp_sep = user_data;
 	struct a2dp_setup *setup;
+	struct audio_device *dev;
 
 	if (a2dp_sep->type == AVDTP_SEP_TYPE_SINK)
 		DBG("Sink %p: Start_Ind", sep);
@@ -957,6 +994,15 @@ static gboolean start_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 						(GSourceFunc) suspend_timeout,
 						a2dp_sep);
 	}
+
+	if (a2dp_sep->remote_suspend) {
+		dev = a2dp_get_dev(session);
+		DBG("dev value is %p: ", dev);
+		if (dev)
+			control_resume(dev);
+		a2dp_sep->remote_suspend = FALSE;
+	}
+
 
 	return TRUE;
 }
@@ -981,7 +1027,7 @@ static void start_cfm(struct avdtp *session, struct avdtp_local_sep *sep,
 		setup->stream = NULL;
 		setup->err = err;
 	}
-
+	a2dp_sep->remote_suspend = FALSE;
 	finalize_resume(setup);
 }
 
@@ -990,6 +1036,7 @@ static gboolean suspend_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 				void *user_data)
 {
 	struct a2dp_sep *a2dp_sep = user_data;
+	struct audio_device *dev;
 
 	if (a2dp_sep->type == AVDTP_SEP_TYPE_SINK)
 		DBG("Sink %p: Suspend_Ind", sep);
@@ -1001,6 +1048,19 @@ static gboolean suspend_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 		a2dp_sep->suspend_timer = 0;
 		avdtp_unref(a2dp_sep->session);
 		a2dp_sep->session = NULL;
+	}
+
+	dev = a2dp_get_dev(session);
+	DBG("dev value is %p: ", dev);
+	if (dev) {
+		uint8_t match = 0;
+		bdaddr_t dst;
+		avdtp_get_peers(session, NULL, &dst);
+		read_special_map_devaddr("remote_suspend", &dst, &match);
+		if (!match) {
+			control_suspend(dev);
+			a2dp_sep->remote_suspend = TRUE;
+		}
 	}
 
 	return TRUE;
@@ -1067,6 +1127,8 @@ static gboolean close_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 	if (!setup)
 		return TRUE;
 
+	a2dp_sep->remote_suspend = FALSE;
+
 	finalize_setup_errno(setup, -ECONNRESET, finalize_suspend,
 							finalize_resume, NULL);
 
@@ -1121,6 +1183,8 @@ static void close_cfm(struct avdtp *session, struct avdtp_local_sep *sep,
 	if (!setup)
 		return;
 
+	a2dp_sep->remote_suspend = FALSE;
+
 	if (err) {
 		setup->stream = NULL;
 		setup->err = err;
@@ -1146,6 +1210,7 @@ static gboolean abort_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 	else
 		DBG("Source %p: Abort_Ind", sep);
 
+	a2dp_sep->remote_suspend = FALSE;
 	a2dp_sep->stream = NULL;
 
 	return TRUE;
@@ -1167,6 +1232,7 @@ static void abort_cfm(struct avdtp *session, struct avdtp_local_sep *sep,
 	if (!setup)
 		return;
 
+	a2dp_sep->remote_suspend = FALSE;
 	setup_unref(setup);
 }
 
@@ -1398,7 +1464,7 @@ int a2dp_register(DBusConnection *conn, const bdaddr_t *src, GKeyFile *config)
 	int sbc_srcs = 1, sbc_sinks = 1;
 	int mpeg12_srcs = 0, mpeg12_sinks = 0;
 	gboolean source = TRUE, sink = FALSE, socket = TRUE;
-	gboolean delay_reporting = FALSE;
+	gboolean delay_reporting = FALSE, sbc_quality = TRUE;
 	char *str;
 	GError *err = NULL;
 	int i;
@@ -1480,6 +1546,19 @@ int a2dp_register(DBusConnection *conn, const bdaddr_t *src, GKeyFile *config)
 		g_free(str);
 	}
 
+	str = g_key_file_get_string(config, "A2DP", "SBCQuality", &err);
+	if (err) {
+		DBG("audio.conf: %s", err->message);
+		g_clear_error(&err);
+	} else {
+		if (g_strcmp0(str, "MEDIUM") == 0) {
+			DBG("explict medium setting used");
+			sbc_quality = FALSE;
+		}
+
+		g_free(str);
+	}
+
 proceed:
 	if (!connection)
 		connection = dbus_connection_ref(conn);
@@ -1533,6 +1612,8 @@ proceed:
 					A2DP_CODEC_MPEG12, delay_reporting,
 					NULL, NULL);
 	}
+
+	server->sbc_quality_high = sbc_quality;
 
 	return 0;
 }
@@ -1629,6 +1710,7 @@ proceed:
 	sep->codec = codec;
 	sep->type = type;
 	sep->delay_reporting = delay_reporting;
+	sep->remote_suspend = FALSE;
 
 	if (type == AVDTP_SEP_TYPE_SOURCE) {
 		l = &server->sources;
@@ -1736,7 +1818,7 @@ struct a2dp_sep *a2dp_get(struct avdtp *session,
 	return NULL;
 }
 
-static uint8_t default_bitpool(uint8_t freq, uint8_t mode)
+static uint8_t high_quality_default_bitpool(uint8_t freq, uint8_t mode)
 {
 	switch (freq) {
 	case SBC_SAMPLING_FREQ_16000:
@@ -1772,20 +1854,57 @@ static uint8_t default_bitpool(uint8_t freq, uint8_t mode)
 	}
 }
 
-static gboolean select_sbc_params(struct sbc_codec_cap *cap,
-					struct sbc_codec_cap *supported)
+static uint8_t medium_quality_default_bitpool(uint8_t freq, uint8_t mode)
 {
-	unsigned int max_bitpool, min_bitpool;
+	switch (freq) {
+	case SBC_SAMPLING_FREQ_16000:
+	case SBC_SAMPLING_FREQ_32000:
+		return 35;
+	case SBC_SAMPLING_FREQ_44100:
+		switch (mode) {
+		case SBC_CHANNEL_MODE_MONO:
+		case SBC_CHANNEL_MODE_DUAL_CHANNEL:
+			return 19;
+		case SBC_CHANNEL_MODE_STEREO:
+		case SBC_CHANNEL_MODE_JOINT_STEREO:
+			return 35;
+		default:
+			error("Invalid channel mode %u", mode);
+			return 35;
+		}
+	case SBC_SAMPLING_FREQ_48000:
+		switch (mode) {
+		case SBC_CHANNEL_MODE_MONO:
+		case SBC_CHANNEL_MODE_DUAL_CHANNEL:
+			return 18;
+		case SBC_CHANNEL_MODE_STEREO:
+		case SBC_CHANNEL_MODE_JOINT_STEREO:
+			return 33;
+		default:
+			error("Invalid channel mode %u", mode);
+			return 33;
+		}
+	default:
+		error("Invalid sampling freq %u", freq);
+		return 35;
+	}
+}
+
+static gboolean select_sbc_params(struct sbc_codec_cap *cap,
+					struct sbc_codec_cap *supported,
+					gboolean edr_capability)
+{
+	unsigned int max_bitpool, min_bitpool, def_bitpool;
 
 	memset(cap, 0, sizeof(struct sbc_codec_cap));
 
 	cap->cap.media_type = AVDTP_MEDIA_TYPE_AUDIO;
 	cap->cap.media_codec_type = A2DP_CODEC_SBC;
 
-	if (supported->frequency & SBC_SAMPLING_FREQ_44100)
-		cap->frequency = SBC_SAMPLING_FREQ_44100;
-	else if (supported->frequency & SBC_SAMPLING_FREQ_48000)
+	if (supported->frequency & SBC_SAMPLING_FREQ_48000)
 		cap->frequency = SBC_SAMPLING_FREQ_48000;
+	else if (supported->frequency & SBC_SAMPLING_FREQ_44100)
+		cap->frequency = SBC_SAMPLING_FREQ_44100;
 	else if (supported->frequency & SBC_SAMPLING_FREQ_32000)
 		cap->frequency = SBC_SAMPLING_FREQ_32000;
 	else if (supported->frequency & SBC_SAMPLING_FREQ_16000)
@@ -1836,8 +1955,14 @@ static gboolean select_sbc_params(struct sbc_codec_cap *cap,
 		cap->allocation_method = SBC_ALLOCATION_SNR;
 
 	min_bitpool = MAX(MIN_BITPOOL, supported->min_bitpool);
-	max_bitpool = MIN(default_bitpool(cap->frequency, cap->channel_mode),
-							supported->max_bitpool);
+
+	def_bitpool = (edr_capability) ?
+				high_quality_default_bitpool(cap->frequency,
+								cap->channel_mode) :
+				medium_quality_default_bitpool(cap->frequency,
+								cap->channel_mode);
+
+	max_bitpool = MIN(def_bitpool, supported->max_bitpool);
 
 	cap->min_bitpool = min_bitpool;
 	cap->max_bitpool = max_bitpool;
@@ -1851,12 +1976,30 @@ static gboolean select_capabilities(struct avdtp *session,
 {
 	struct avdtp_service_capability *media_transport, *media_codec;
 	struct sbc_codec_cap sbc_cap;
+	bdaddr_t src, dst;
+	gboolean edr_capability;
+	struct avdtp_service_capability *media_scms_t;
+	struct avdtp_content_protection_capability scms_t_cap = {0x02, 0x00};
 
 	media_codec = avdtp_get_codec(rsep);
 	if (!media_codec)
 		return FALSE;
 
-	select_sbc_params(&sbc_cap, (struct sbc_codec_cap *) media_codec->data);
+	media_scms_t = avdtp_get_remote_sep_protection(rsep);
+	if (avdtp_get_protection_req(session)) {
+		if (!media_scms_t ||
+			(memcmp(media_scms_t->data,
+					&scms_t_cap, sizeof(scms_t_cap)) != 0))
+			return FALSE;
+	}
+
+
+
+	avdtp_get_peers(session, &src, &dst);
+	edr_capability = a2dp_read_edrcapability(&src, &dst);
+
+	select_sbc_params(&sbc_cap, (struct sbc_codec_cap *) media_codec->data,
+						edr_capability);
 
 	media_transport = avdtp_service_cap_new(AVDTP_MEDIA_TRANSPORT,
 						NULL, 0);
@@ -1873,6 +2016,17 @@ static gboolean select_capabilities(struct avdtp *session,
 		delay_reporting = avdtp_service_cap_new(AVDTP_DELAY_REPORTING,
 								NULL, 0);
 		*caps = g_slist_append(*caps, delay_reporting);
+	}
+
+	if (avdtp_get_protection_req(session)) {
+		if (media_scms_t &&
+			(memcmp(media_scms_t->data, &scms_t_cap,
+						sizeof(scms_t_cap)) == 0)) {
+			media_scms_t = avdtp_service_cap_new(
+							AVDTP_CONTENT_PROTECTION,
+							&scms_t_cap, 2);
+			*caps = g_slist_append(*caps, media_scms_t);
+		}
 	}
 
 	return TRUE;
@@ -2083,7 +2237,7 @@ unsigned int a2dp_config(struct avdtp *session, struct a2dp_sep *sep,
 	if (setup->caps != caps) {
 		g_slist_foreach(setup->caps, (GFunc) g_free, NULL);
 		g_slist_free(setup->caps);
-		setup->caps = g_slist_copy(caps);
+		g_slist_foreach(caps, copy_capabilities, &setup->caps);
 	}
 
 	switch (avdtp_sep_get_state(sep->lsep)) {
@@ -2267,8 +2421,8 @@ gboolean a2dp_cancel(struct audio_device *dev, unsigned int id)
 
 		if (!setup->cb) {
 			DBG("aborting setup %p", setup);
-			avdtp_abort(setup->session, setup->stream);
-			return TRUE;
+			if (avdtp_abort(setup->session, setup->stream) == 0)
+				return TRUE;
 		}
 
 		setup_unref(setup);
@@ -2295,7 +2449,6 @@ gboolean a2dp_sep_unlock(struct a2dp_sep *sep, struct avdtp *session)
 	avdtp_state_t state;
 	GSList *l;
 
-	state = avdtp_sep_get_state(sep->lsep);
 
 	sep->locked = FALSE;
 
@@ -2306,11 +2459,19 @@ gboolean a2dp_sep_unlock(struct a2dp_sep *sep, struct avdtp *session)
 	else
 		l = server->sinks;
 
+	if (l == NULL) {
+		return TRUE;
+	}
 	/* Unregister sep if it was removed */
 	if (g_slist_find(l, sep) == NULL) {
 		a2dp_unregister_sep(sep);
 		return TRUE;
 	}
+
+	if (sep->lsep == NULL) {
+		return TRUE;
+	}
+	state = avdtp_sep_get_state(sep->lsep);
 
 	if (!sep->stream || state == AVDTP_STATE_IDLE)
 		return TRUE;
@@ -2320,7 +2481,7 @@ gboolean a2dp_sep_unlock(struct a2dp_sep *sep, struct avdtp *session)
 		/* Set timer here */
 		break;
 	case AVDTP_STATE_STREAMING:
-		if (avdtp_suspend(session, sep->stream) == 0)
+		if (session && avdtp_suspend(session, sep->stream) == 0)
 			sep->suspending = TRUE;
 		break;
 	default:
@@ -2376,4 +2537,54 @@ struct a2dp_sep *a2dp_get_sep(struct avdtp *session,
 struct avdtp_stream *a2dp_sep_get_stream(struct a2dp_sep *sep)
 {
 	return sep->stream;
+}
+
+gboolean a2dp_is_reconfig(struct avdtp *session)
+{
+	struct a2dp_setup *setup;
+	gboolean is_reconfig;
+
+	DBG("a2dp_is_reconfig");
+	if (!session)
+		return FALSE;
+	setup = a2dp_setup_get(session);
+	if (!setup)
+		return FALSE;
+	is_reconfig = setup->reconfigure;
+	setup_unref(setup);
+	return is_reconfig ;
+}
+
+gboolean a2dp_read_edrcapability(bdaddr_t *src, bdaddr_t *dst)
+{
+	uint16_t version;
+	uint8_t remote_features[8];
+	struct a2dp_server *server;
+
+	if (!src || !dst)
+		return FALSE;
+
+	server = find_server(servers, src);
+
+	if (!server || (FALSE == server->sbc_quality_high)) {
+		return FALSE;
+	}
+
+	read_version_info(src, dst, &version);
+
+	DBG("remote device version is %d", version);
+	if (version < 3)
+		return FALSE;
+	else {
+		read_remote_features(src, dst, &remote_features[0], NULL);
+		// If any ACL EDR bit is set, remote device supports EDR rates over A2DP
+		if ((remote_features[EDR_ACL_2_MBPS_BYTE] & EDR_ACL_2_MBPS_MASK) ||
+			(remote_features[EDR_ACL_3_MBPS_BYTE] & EDR_ACL_3_MBPS_MASK) ||
+			(remote_features[_3_SLOT_EDR_ACL_BYTE] & _3_SLOT_EDR_ACL_MASK) ||
+			(remote_features[_5_SLOT_EDR_ACL_BYTE] & _5_SLOT_EDR_ACL_MASK) ) {
+			return TRUE;
+		} else
+			return FALSE;
+	}
+	return FALSE;
 }

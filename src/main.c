@@ -485,6 +485,11 @@ int main(int argc, char *argv[])
 	 * daemon needs to be re-worked. */
 	plugin_init(config, option_plugin, option_noplugin);
 
+	/* After plugins have been initialized, enable registered GATT servers
+	 */
+	if (main_opts.attrib_server)
+		attrib_server_dbus_enable();
+
 	event_loop = g_main_loop_new(NULL, FALSE);
 
 	if (adapter_ops_setup() < 0) {

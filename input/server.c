@@ -184,7 +184,7 @@ int server_start(const bdaddr_t *src)
 	server = g_new0(struct input_server, 1);
 	bacpy(&server->src, src);
 
-	server->ctrl = bt_io_listen(BT_IO_L2CAP, connect_event_cb, NULL,
+	server->ctrl = bt_io_listen(BT_IO_L2CAP, NULL, confirm_event_cb,
 				server, NULL, &err,
 				BT_IO_OPT_SOURCE_BDADDR, src,
 				BT_IO_OPT_PSM, L2CAP_PSM_HIDP_CTRL,
@@ -198,7 +198,7 @@ int server_start(const bdaddr_t *src)
 		return -1;
 	}
 
-	server->intr = bt_io_listen(BT_IO_L2CAP, NULL, confirm_event_cb,
+	server->intr = bt_io_listen(BT_IO_L2CAP, connect_event_cb, NULL,
 				server, NULL, &err,
 				BT_IO_OPT_SOURCE_BDADDR, src,
 				BT_IO_OPT_PSM, L2CAP_PSM_HIDP_INTR,

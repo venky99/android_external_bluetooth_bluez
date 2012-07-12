@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2006-2007  Nokia Corporation
  *  Copyright (C) 2004-2008  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2010-2012, Code Aurora Forum. All rights reserved.
  *
  *
  *  This library is free software; you can redistribute it and/or
@@ -34,6 +35,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <errno.h>
 
 #include <netinet/in.h>
 #include <sys/poll.h>
@@ -47,27 +49,29 @@
 #include "rtp.h"
 #include "liba2dp.h"
 
-#define LOG_NDEBUG 0
-#define LOG_TAG "A2DP"
-#include <utils/Log.h>
-
-#define ENABLE_DEBUG
-/* #define ENABLE_VERBOSE */
-/* #define ENABLE_TIMING */
-
 #define BUFFER_SIZE 2048
 
+#ifdef ENABLE_TIMING
+#define ENABLE_DEBUG
+#define ENABLE_VERBOSE
+#endif
+
 #ifdef ENABLE_DEBUG
+#define LOG_NDDEBUG 0
 #define DBG ALOGD
 #else
 #define DBG(fmt, arg...)
 #endif
 
 #ifdef ENABLE_VERBOSE
+#define LOG_NDEBUG 0
 #define VDBG ALOGV
 #else
 #define VDBG(fmt, arg...)
 #endif
+
+#define LOG_TAG "A2DP"
+#include <utils/Log.h>
 
 #ifndef MIN
 # define MIN(x, y) ((x) < (y) ? (x) : (y))
@@ -125,7 +129,9 @@ struct bluetooth_data {
 	a2dp_state_t state;				/* Current A2DP state */
 	a2dp_command_t command;			/* Current command for a2dp_thread */
 	pthread_t thread;
+	pthread_t signalling_thread;
 	pthread_mutex_t mutex;
+	pthread_mutex_t mutex2;
 	int started;
 	pthread_cond_t thread_start;
 	pthread_cond_t thread_wait;
@@ -136,6 +142,8 @@ struct bluetooth_data {
 	int	frame_duration;			/* length of an SBC frame in microseconds */
 	int codesize;				/* SBC codesize */
 	int samples;				/* Number of encoded samples */
+	size_t sizeof_scms_t;                   /* Indicates protection hdr */
+	uint8_t scms_t_cp_header;		/* Protection header to use */
 	uint8_t buffer[BUFFER_SIZE];		/* Codec transfer buffer */
 	int count;				/* Codec transfer buffer counter */
 
@@ -149,7 +157,12 @@ struct bluetooth_data {
 
 	/* used for pacing our writes to the output socket */
 	uint64_t	next_write;
+	uint8_t	isEdrCapable;
 };
+
+#define CP_TYPE_SCMS_T 		0x0002
+#define SCMS_T_COPY_ALLOWED	0x00
+#define SCMS_T_COPY_NOT_ALLOWED 0x02
 
 static uint64_t get_microseconds()
 {
@@ -176,6 +189,27 @@ static void bluetooth_close(struct bluetooth_data *data)
 {
 	DBG("bluetooth_close");
 	if (data->server.fd >= 0) {
+		// sending BT_CLOSE to cleanup unix socket.
+		char buf[BT_SUGGESTED_BUFFER_SIZE];
+		struct bt_close_req *close_req = (void*) buf;
+		struct bt_close_rsp *close_rsp = (void*) buf;
+		int err;
+		memset(close_req, 0, BT_SUGGESTED_BUFFER_SIZE);
+		close_req->h.type = BT_REQUEST;
+		close_req->h.name = BT_CLOSE;
+
+		close_req->h.length = sizeof(*close_req);
+
+		err = audioservice_send(data, &close_req->h);
+		if (err < 0) {
+			ERR("audioservice_send failed for BT_CLOSE_REQ\n");
+		} else {
+			close_rsp->h.length = 0;
+			err = audioservice_expect(data, &close_rsp->h, BT_CLOSE);
+			if (err < 0) {
+				ERR("audioservice_expect failed for BT_CLOSE_RSP\n");
+			}
+		}
 		bt_audio_service_close(data->server.fd);
 		data->server.fd = -1;
 	}
@@ -259,7 +293,7 @@ static int bluetooth_start(struct bluetooth_data *data)
 	setsockopt(data->stream.fd, SOL_SOCKET, SO_SNDBUF, &bytes,
 			sizeof(bytes));
 
-	data->count = sizeof(struct rtp_header) + sizeof(struct rtp_payload);
+	data->count = sizeof(struct rtp_header) + sizeof(struct rtp_payload) + data->sizeof_scms_t;
 	data->frame_count = 0;
 	data->samples = 0;
 	data->nsamples = 0;
@@ -317,7 +351,7 @@ error:
 	return err;
 }
 
-static uint8_t default_bitpool(uint8_t freq, uint8_t mode)
+static uint8_t high_quality_default_bitpool(uint8_t freq, uint8_t mode)
 {
 	switch (freq) {
 	case BT_SBC_SAMPLING_FREQ_16000:
@@ -353,11 +387,47 @@ static uint8_t default_bitpool(uint8_t freq, uint8_t mode)
 	}
 }
 
+static uint8_t medium_quality_default_bitpool(uint8_t freq, uint8_t mode)
+{
+	switch (freq) {
+	case BT_SBC_SAMPLING_FREQ_16000:
+	case BT_SBC_SAMPLING_FREQ_32000:
+		return 35;
+	case BT_SBC_SAMPLING_FREQ_44100:
+		switch (mode) {
+		case BT_A2DP_CHANNEL_MODE_MONO:
+		case BT_A2DP_CHANNEL_MODE_DUAL_CHANNEL:
+			return 19;
+		case BT_A2DP_CHANNEL_MODE_STEREO:
+		case BT_A2DP_CHANNEL_MODE_JOINT_STEREO:
+			return 35;
+		default:
+			ERR("Invalid channel mode %u", mode);
+			return 35;
+		}
+	case BT_SBC_SAMPLING_FREQ_48000:
+		switch (mode) {
+		case BT_A2DP_CHANNEL_MODE_MONO:
+		case BT_A2DP_CHANNEL_MODE_DUAL_CHANNEL:
+			return 18;
+		case BT_A2DP_CHANNEL_MODE_STEREO:
+		case BT_A2DP_CHANNEL_MODE_JOINT_STEREO:
+			return 33;
+		default:
+			ERR("Invalid channel mode %u", mode);
+			return 33;
+		}
+	default:
+		ERR("Invalid sampling freq %u", freq);
+		return 35;
+	}
+}
+
 static int bluetooth_a2dp_init(struct bluetooth_data *data)
 {
 	sbc_capabilities_t *cap = &data->sbc_capabilities;
 	unsigned int max_bitpool, min_bitpool;
-	int dir;
+	int dir, def_bitpool;
 
 	switch (data->rate) {
 	case 48000:
@@ -421,10 +491,14 @@ static int bluetooth_a2dp_init(struct bluetooth_data *data)
 	else if (cap->allocation_method & BT_A2DP_ALLOCATION_SNR)
 		cap->allocation_method = BT_A2DP_ALLOCATION_SNR;
 
+		def_bitpool = (data->isEdrCapable) ?
+				high_quality_default_bitpool(cap->frequency,
+								 cap->channel_mode) :
+				medium_quality_default_bitpool(cap->frequency,
+								cap->channel_mode);
+
 		min_bitpool = MAX(MIN_BITPOOL, cap->min_bitpool);
-		max_bitpool = MIN(default_bitpool(cap->frequency,
-					cap->channel_mode),
-					cap->max_bitpool);
+		max_bitpool = MIN(def_bitpool, cap->max_bitpool);
 
 	cap->min_bitpool = min_bitpool;
 	cap->max_bitpool = max_bitpool;
@@ -624,7 +698,14 @@ static int bluetooth_a2dp_hw_params(struct bluetooth_data *data)
 		return err;
 
 	data->link_mtu = setconf_rsp->link_mtu;
-	DBG("MTU: %d", data->link_mtu);
+	if (setconf_rsp->content_protection == CP_TYPE_SCMS_T) {
+		data->sizeof_scms_t = 1;
+		data->scms_t_cp_header = SCMS_T_COPY_NOT_ALLOWED;
+	} else {
+		data->sizeof_scms_t = 0;
+		data->scms_t_cp_header = SCMS_T_COPY_ALLOWED;
+	}
+	DBG("MTU: %d -- SCMS-T Enabled: %d", data->link_mtu, setconf_rsp->content_protection);
 
 	/* Setup SBC encoder now we agree on parameters */
 	bluetooth_a2dp_setup(data);
@@ -650,10 +731,13 @@ static int avdtp_write(struct bluetooth_data *data)
 #endif
 
 	header = (struct rtp_header *)data->buffer;
-	payload = (struct rtp_payload *)(data->buffer + sizeof(*header));
+	payload = (struct rtp_payload *)(data->buffer + sizeof(*header) + data->sizeof_scms_t);
 
-	memset(data->buffer, 0, sizeof(*header) + sizeof(*payload));
+	memset(data->buffer, 0, sizeof(*header) + sizeof(*payload) + data->sizeof_scms_t);
 
+	if (data->sizeof_scms_t) {
+		data->buffer[sizeof(*header)] = data->scms_t_cp_header;
+	}
 	payload->frame_count = data->frame_count;
 	header->v = 2;
 	header->pt = 1;
@@ -670,30 +754,30 @@ static int avdtp_write(struct bluetooth_data *data)
 	end2 = get_microseconds();
 	print_time("poll", begin2, end2);
 #endif
-	if (ret == 1 && data->stream.revents == POLLOUT) {
-		long ahead = 0;
-		now = get_microseconds();
+	long ahead = 0;
+	now = get_microseconds();
 
-		if (data->next_write) {
-			ahead = data->next_write - now;
+	if (data->next_write) {
+		ahead = data->next_write - now;
 #ifdef ENABLE_TIMING
-			DBG("duration: %ld, ahead: %ld", duration, ahead);
+		DBG("duration: %ld, ahead: %ld", duration, ahead);
 #endif
-			if (ahead > 0) {
-				/* too fast, need to throttle */
-				usleep(ahead);
-			}
-		} else {
-			data->next_write = now;
+		if (ahead > 0) {
+			/* too fast, need to throttle */
+			usleep(ahead);
 		}
-		if (ahead <= -CATCH_UP_TIMEOUT * 1000) {
-			/* fallen too far behind, don't try to catch up */
-			VDBG("ahead < %d, reseting next_write timestamp", -CATCH_UP_TIMEOUT * 1000);
-			data->next_write = 0;
-		} else {
-			data->next_write += duration;
-		}
+	} else {
+		data->next_write = now;
+	}
+	if (ahead <= -CATCH_UP_TIMEOUT * 1000) {
+		/* fallen too far behind, don't try to catch up */
+		VDBG("ahead < %d, reseting next_write timestamp", -CATCH_UP_TIMEOUT * 1000);
+		data->next_write = 0;
+	} else {
+		data->next_write += duration;
+	}
 
+	if (ret == 1 && data->stream.revents == POLLOUT) {
 #ifdef ENABLE_TIMING
 		begin2 = get_microseconds();
 #endif
@@ -713,11 +797,10 @@ static int avdtp_write(struct bluetooth_data *data)
 		/* can happen during normal remote disconnect */
 		VDBG("poll() failed: %d (revents = %d, errno %s)",
 				ret, data->stream.revents, strerror(errno));
-		data->next_write = 0;
 	}
 
 	/* Reset buffer of data to send */
-	data->count = sizeof(struct rtp_header) + sizeof(struct rtp_payload);
+	data->count = sizeof(struct rtp_header) + sizeof(struct rtp_payload) + data->sizeof_scms_t;
 	data->frame_count = 0;
 	data->samples = 0;
 	data->seq_num++;
@@ -745,8 +828,10 @@ static int audioservice_send(struct bluetooth_data *data,
 		err = -errno;
 		ERR("Error sending data to audio service: %s(%d)",
 			strerror(errno), errno);
-		if (err == -EPIPE)
+		if (err == -EPIPE || err == -ECONNRESET) {
+			data->server.fd = -1;
 			bluetooth_close(data);
+		}
 	}
 
 	return err;
@@ -766,8 +851,10 @@ static int audioservice_recv(struct bluetooth_data *data,
 		err = -errno;
 		ERR("Error receiving IPC data from bluetoothd: %s (%d)",
 						strerror(errno), errno);
-		if (err == -EPIPE)
+		if (err == -EPIPE || err == -ECONNRESET) {
+			data->server.fd = -1;
 			bluetooth_close(data);
+		}
 	} else if ((size_t) ret < sizeof(bt_audio_msg_header_t)) {
 		ERR("Too short (%d bytes) IPC packet from bluetoothd", ret);
 		err = -EINVAL;
@@ -876,6 +963,8 @@ static int bluetooth_parse_capabilities(struct bluetooth_data *data,
 		return -EINVAL;
 
 	memcpy(&data->sbc_capabilities, codec, codec->length);
+
+	data->isEdrCapable = rsp->isEdrCapable;
 	return 0;
 }
 
@@ -956,26 +1045,26 @@ static void __set_command(struct bluetooth_data *data, a2dp_command_t command)
 static void set_command(struct bluetooth_data *data, a2dp_command_t command)
 {
 	pthread_mutex_lock(&data->mutex);
+	 pthread_mutex_lock(&data->mutex2);
 	__set_command(data, command);
+	pthread_mutex_unlock(&data->mutex2);
 	pthread_mutex_unlock(&data->mutex);
 }
 
-/* timeout is in milliseconds */
-static int wait_for_start(struct bluetooth_data *data, int timeout)
-{
+static void a2dp_sig_thread(void *d) {
+	struct bluetooth_data *data = d;
 	a2dp_state_t state = data->state;
+	int err = 0;
 	struct timeval tv;
 	struct timespec ts;
-	int err = 0;
 
 #ifdef ENABLE_TIMING
 	uint64_t begin, end;
 	begin = get_microseconds();
 #endif
-
 	gettimeofday(&tv, (struct timezone *) NULL);
-	ts.tv_sec = tv.tv_sec + (timeout / 1000);
-	ts.tv_nsec = (tv.tv_usec + (timeout % 1000) * 1000L ) * 1000L;
+	ts.tv_sec = tv.tv_sec + (WRITE_TIMEOUT / 1000);
+	ts.tv_nsec = (tv.tv_usec + (WRITE_TIMEOUT % 1000) * 1000L ) * 1000L;
 
 	pthread_mutex_lock(&data->mutex);
 	while (state != A2DP_STATE_STARTED) {
@@ -994,8 +1083,10 @@ again:
 				err = 0;
 				break;
 			}
-			if (err == ETIMEDOUT)
+			if (err == ETIMEDOUT) {
+				DBG(" Time out");
 				break;
+			}
 			goto again;
 		}
 
@@ -1013,11 +1104,34 @@ again:
 
 #ifdef ENABLE_TIMING
 	end = get_microseconds();
-	print_time("wait_for_start", begin, end);
+	print_time("signalling process took", begin, end);
 #endif
 
+	data->signalling_thread = 0;
+	DBG("error returned is %d", err);
 	/* pthread_cond_timedwait returns positive errors */
-	return -err;
+	return;
+}
+
+static int check_for_start(struct bluetooth_data *data)
+{
+	int err = 0;
+	pthread_mutex_lock(&data->mutex2);
+	a2dp_state_t state = data->state;
+	pthread_mutex_unlock(&data->mutex2);
+	if (state == A2DP_STATE_STARTED) {
+		return err;
+	} else if (data->signalling_thread == 0){
+		pthread_attr_t attr;
+		pthread_attr_init(&attr);
+		pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+		err = pthread_create(&data->signalling_thread, &attr, a2dp_sig_thread, data);
+		DBG("a2dp_sig_thread err %d",err);
+		return -EINPROGRESS;
+	}
+	DBG("Signalling is in progress");
+
+	return -EINPROGRESS;
 }
 
 static void a2dp_free(struct bluetooth_data *data)
@@ -1026,6 +1140,7 @@ static void a2dp_free(struct bluetooth_data *data)
 	pthread_cond_destroy(&data->thread_wait);
 	pthread_cond_destroy(&data->thread_start);
 	pthread_mutex_destroy(&data->mutex);
+	pthread_mutex_destroy(&data->mutex2);
 	free(data);
 	return;
 }
@@ -1130,6 +1245,7 @@ int a2dp_init(int rate, int channels, a2dpData* dataPtr)
 	sbc_init(&data->sbc, 0);
 
 	pthread_mutex_init(&data->mutex, NULL);
+	pthread_mutex_init(&data->mutex2, NULL);
 	pthread_cond_init(&data->thread_start, NULL);
 	pthread_cond_init(&data->thread_wait, NULL);
 	pthread_cond_init(&data->client_wait, NULL);
@@ -1147,6 +1263,7 @@ int a2dp_init(int rate, int channels, a2dpData* dataPtr)
 		err = -err;
 		goto error;
 	}
+	data->signalling_thread = 0; // this thread is for signalling
 
 	/* Make sure the state machine is ready and waiting */
 	while (!data->started) {
@@ -1179,6 +1296,18 @@ void a2dp_set_sink(a2dpData d, const char* address)
 	}
 }
 
+void a2dp_set_cp_header(a2dpData d, uint8_t cpHeader)
+{
+	struct bluetooth_data* data = (struct bluetooth_data*)d;
+
+	if (data) {
+		VDBG("a2dp_set_cp_header called.  current: %x, new: %x", data->scms_t_cp_header, cpHeader);
+
+		/* For SCMS-T least significant two bits matter, mask out the rest */
+		data->scms_t_cp_header = (cpHeader & 0x03);
+	}
+}
+
 int a2dp_write(a2dpData d, const void* buffer, int count)
 {
 	struct bluetooth_data* data = (struct bluetooth_data*)d;
@@ -1196,7 +1325,7 @@ int a2dp_write(a2dpData d, const void* buffer, int count)
 	begin = get_microseconds();
 #endif
 
-	err = wait_for_start(data, WRITE_TIMEOUT);
+	err = check_for_start(data);
 	if (err < 0)
 		return err;
 
@@ -1219,7 +1348,7 @@ int a2dp_write(a2dpData d, const void* buffer, int count)
 		data->count += written;
 		data->frame_count++;
 		data->samples += encoded;
-		data->nsamples += encoded;
+		data->nsamples += encoded/4;
 
 		/* No space left for another frame then send */
 		if ((data->count + written >= data->link_mtu) ||

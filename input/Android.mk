@@ -21,6 +21,7 @@ LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../lib \
 	$(LOCAL_PATH)/../src \
 	$(LOCAL_PATH)/../gdbus \
+	$(LOCAL_PATH)/../btio \
 	$(call include-path-for, glib) \
 	$(call include-path-for, dbus)
 

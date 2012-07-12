@@ -100,6 +100,7 @@ struct att_data_list *att_data_list_alloc(uint16_t num, uint16_t len)
 	list = g_new0(struct att_data_list, 1);
 	list->len = len;
 	list->num = num;
+	list->cnt = 0;
 
 	list->data = g_malloc0(sizeof(uint8_t *) * num);
 
@@ -182,7 +183,7 @@ uint16_t enc_read_by_grp_resp(struct att_data_list *list, uint8_t *pdu,
 
 	ptr = &pdu[2];
 
-	for (i = 0, w = 2; i < list->num && w + list->len <= len; i++) {
+	for (i = 0, w = 2; i < list->cnt && w + list->len <= len; i++) {
 		memcpy(ptr, list->data[i], list->len);
 		ptr += list->len;
 		w += list->len;
@@ -207,6 +208,7 @@ struct att_data_list *dec_read_by_grp_resp(const uint8_t *pdu, int len)
 
 	ptr = &pdu[2];
 
+	list->cnt = num;
 	for (i = 0; i < num; i++) {
 		memcpy(list->data[i], ptr, list->len);
 		ptr += list->len;
@@ -289,25 +291,30 @@ uint16_t dec_find_by_type_req(const uint8_t *pdu, int len, uint16_t *start,
 	return len;
 }
 
-uint16_t enc_find_by_type_resp(GSList *matches, uint8_t *pdu, int len)
+uint16_t enc_find_by_type_resp(struct att_data_list *list, uint8_t *pdu,
+									int len)
 {
-	GSList *l;
-	uint16_t offset;
+	int i;
+	uint16_t w;
+	uint8_t *ptr;
 
-	if (pdu == NULL || len < 5)
+	if (list == NULL)
+		return 0;
+
+	if (len < list->len + 1)
 		return 0;
 
 	pdu[0] = ATT_OP_FIND_BY_TYPE_RESP;
 
-	for (l = matches, offset = 1; l && len >= (offset + 4);
-					l = l->next, offset += 4) {
-		struct att_range *range = l->data;
+	ptr = &pdu[1];
 
-		att_put_u16(range->start, &pdu[offset]);
-		att_put_u16(range->end, &pdu[offset + 2]);
+	for (i = 0, w = 1; i < list->cnt && w + list->len <= len; i++) {
+		memcpy(ptr, list->data[i], list->len);
+		ptr += list->len;
+		w += list->len;
 	}
 
-	return offset;
+	return w;
 }
 
 GSList *dec_find_by_type_resp(const uint8_t *pdu, int len)
@@ -406,7 +413,7 @@ uint16_t enc_read_by_type_resp(struct att_data_list *list, uint8_t *pdu, int len
 	pdu[1] = l;
 	ptr = &pdu[2];
 
-	for (i = 0, w = 2; i < list->num && w + l <= len; i++) {
+	for (i = 0, w = 2; i < list->cnt && w + l <= len; i++) {
 		memcpy(ptr, list->data[i], l);
 		ptr += l;
 		w += l;
@@ -431,6 +438,7 @@ struct att_data_list *dec_read_by_type_resp(const uint8_t *pdu, int len)
 
 	ptr = &pdu[2];
 
+	list->cnt = num;
 	for (i = 0; i < num; i++) {
 		memcpy(list->data[i], ptr, list->len);
 		ptr += list->len;
@@ -642,7 +650,7 @@ uint16_t dec_read_blob_req(const uint8_t *pdu, int len, uint16_t *handle,
 	return min_len;
 }
 
-uint16_t enc_read_resp(uint8_t *value, int vlen, uint8_t *pdu, int len)
+uint16_t enc_read_resp(const uint8_t *value, int vlen, uint8_t *pdu, int len)
 {
 	if (pdu == NULL)
 		return 0;
@@ -660,7 +668,7 @@ uint16_t enc_read_resp(uint8_t *value, int vlen, uint8_t *pdu, int len)
 	return vlen + 1;
 }
 
-uint16_t enc_read_blob_resp(uint8_t *value, int vlen, uint16_t offset,
+uint16_t enc_read_blob_resp(const uint8_t *value, int vlen, uint16_t offset,
 							uint8_t *pdu, int len)
 {
 	if (pdu == NULL)
@@ -773,7 +781,7 @@ uint16_t enc_find_info_resp(uint8_t format, struct att_data_list *list,
 	pdu[1] = format;
 	ptr = (void *) &pdu[2];
 
-	for (i = 0, w = 2; i < list->num && w + list->len <= len; i++) {
+	for (i = 0, w = 2; i < list->cnt && w + list->len <= len; i++) {
 		memcpy(ptr, list->data[i], list->len);
 		ptr += list->len;
 		w += list->len;
@@ -812,6 +820,7 @@ struct att_data_list *dec_find_info_resp(const uint8_t *pdu, int len,
 
 	list = att_data_list_alloc(num, elen);
 
+	list->cnt = num;
 	for (i = 0; i < num; i++) {
 		memcpy(list->data[i], ptr, list->len);
 		ptr += list->len;
@@ -835,6 +844,42 @@ uint16_t enc_notification(struct attribute *a, uint8_t *pdu, int len)
 	memcpy(&pdu[3], a->data, a->len);
 
 	return a->len + min_len;
+}
+
+uint16_t enc_notify(uint16_t handle, const uint8_t *value, int vlen,
+						uint8_t *pdu, int len)
+{
+	const uint16_t min_len = sizeof(pdu[0]) + sizeof(uint16_t);
+
+	if (pdu == NULL || len < min_len)
+		return 0;
+
+	if (vlen + min_len > len)
+		vlen = len - min_len;
+
+	pdu[0] = ATT_OP_HANDLE_NOTIFY;
+	att_put_u16(handle, &pdu[1]);
+	memcpy(&pdu[3], value, vlen);
+
+	return vlen + min_len;
+}
+
+uint16_t enc_indicate(uint16_t handle, const uint8_t *value, int vlen,
+						uint8_t *pdu, int len)
+{
+	const uint16_t min_len = sizeof(pdu[0]) + sizeof(uint16_t);
+
+	if (pdu == NULL || len < min_len)
+		return 0;
+
+	if (vlen + min_len > len)
+		vlen = len - min_len;
+
+	pdu[0] = ATT_OP_HANDLE_IND;
+	att_put_u16(handle, &pdu[1]);
+	memcpy(&pdu[3], value, vlen);
+
+	return vlen + min_len;
 }
 
 uint16_t enc_indication(struct attribute *a, uint8_t *pdu, int len)

@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2012 Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -162,3 +163,5 @@ gboolean a2dp_sep_get_lock(struct a2dp_sep *sep);
 struct avdtp_stream *a2dp_sep_get_stream(struct a2dp_sep *sep);
 struct a2dp_sep *a2dp_get_sep(struct avdtp *session,
 				struct avdtp_stream *stream);
+gboolean a2dp_is_reconfig(struct avdtp *session);
+gboolean a2dp_read_edrcapability( bdaddr_t *src, bdaddr_t *dst);

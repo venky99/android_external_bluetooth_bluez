@@ -24,11 +24,16 @@
 #ifndef __GATTRIB_H
 #define __GATTRIB_H
 
+#include "btio.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define GATTRIB_ALL_EVENTS 0xFF
+#define GATTRIB_ALL_REQS 0xFE
+
+#define GATT_TIMEOUT 30
 
 struct _GAttrib;
 typedef struct _GAttrib GAttrib;
@@ -47,6 +52,8 @@ void g_attrib_unref(GAttrib *attrib);
 GIOChannel *g_attrib_get_channel(GAttrib *attrib);
 
 gboolean g_attrib_set_disconnect_function(GAttrib *attrib,
+		GAttribDisconnectFunc disconnect, gpointer user_data);
+gboolean g_attrib_set_disconnect_server_function(GAttrib *attrib,
 		GAttribDisconnectFunc disconnect, gpointer user_data);
 
 gboolean g_attrib_set_destroy_function(GAttrib *attrib,
@@ -67,12 +74,17 @@ guint g_attrib_register(GAttrib *attrib, guint8 opcode,
 					GDestroyNotify notify);
 
 gboolean g_attrib_is_encrypted(GAttrib *attrib);
+BtIOSecLevel g_attrib_sec_level(GAttrib *attrib);
 
 uint8_t *g_attrib_get_buffer(GAttrib *attrib, int *len);
 gboolean g_attrib_set_mtu(GAttrib *attrib, int mtu);
 
 gboolean g_attrib_unregister(GAttrib *attrib, guint id);
 gboolean g_attrib_unregister_all(GAttrib *attrib);
+
+void attrib_server_attach(struct _GAttrib *attrib, bdaddr_t *src, bdaddr_t *dst,
+								guint mtu);
+
 
 #ifdef __cplusplus
 }

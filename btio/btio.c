@@ -61,6 +61,8 @@ struct set_opts {
 	uint8_t mode;
 	int flushable;
 	uint8_t force_active;
+	int flush_timeout;
+	struct bt_le_params le_params;
 };
 
 struct connect {
@@ -396,6 +398,66 @@ static gboolean set_force_active(int sock, BtIOType type, uint8_t force_active,
 	return TRUE;
 }
 
+gboolean set_le_params(int sock, struct bt_le_params *params, GError **err)
+{
+	struct bt_le_params bt_le_params;
+
+	if (params && (params->interval_min > params->interval_max ||
+			params->interval_max < 0x0006 ||
+			params->interval_min > 0x0c80 ||
+			params->latency > 0x01f4 ||
+			params->supervision_timeout < 0x000a ||
+			params->supervision_timeout > 0x0c80 ||
+			params->min_ce_len > params->max_ce_len)) {
+
+		g_set_error(err, BT_IO_ERROR, BT_IO_ERROR_INVALID_ARGS,
+			"Invalid - int_min:0x%x int_max:0x%x latency:0x%x "
+			"to:0x%x min_ce:0x%x max_ce:0x%x",
+			params->interval_min, params->interval_max,
+			params->latency, params->supervision_timeout,
+			params->min_ce_len, params->max_ce_len);
+
+		return FALSE;
+	}
+
+	if (params)
+		bt_le_params = *params;
+	else
+		memset(&bt_le_params, 0, sizeof(bt_le_params));
+
+	if (setsockopt(sock, SOL_BLUETOOTH, BT_LE_PARAMS, &bt_le_params,
+						sizeof(bt_le_params)) == 0)
+		return TRUE;
+
+	if (errno != ENOPROTOOPT) {
+		ERROR_FAILED(err, "setsockopt(BT_LE_PARAMS)", errno);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+gboolean get_le_params(int sock, struct bt_le_params *params, GError **err)
+{
+	struct bt_le_params bt_le_params;
+	socklen_t len;
+
+	memset(&bt_le_params, 0, sizeof(bt_le_params));
+	len = sizeof(bt_le_params);
+	if (getsockopt(sock, SOL_BLUETOOTH, BT_LE_PARAMS,
+						&bt_le_params, &len) == 0) {
+		*params = bt_le_params;
+		return TRUE;
+	}
+
+	if (errno != ENOPROTOOPT) {
+		ERROR_FAILED(err, "getsockopt(BT_LE_PARAMS)", errno);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
 static gboolean set_sec_level(int sock, BtIOType type, int level, GError **err)
 {
 	struct bt_security sec;
@@ -541,9 +603,10 @@ static int l2cap_set_flushable(int sock, gboolean flushable)
 
 static gboolean l2cap_set(int sock, int sec_level, uint16_t imtu,
 				uint16_t omtu, uint8_t mode, int master,
-				int flushable, uint8_t force_active, GError **err)
+				int flushable, uint8_t force_active,
+				int flush_timeout, GError **err)
 {
-	if (imtu || omtu || mode) {
+	if (imtu || omtu || mode || (flush_timeout >= 0)) {
 		struct l2cap_options l2o;
 		socklen_t len;
 
@@ -561,6 +624,8 @@ static gboolean l2cap_set(int sock, int sec_level, uint16_t imtu,
 			l2o.omtu = omtu;
 		if (mode)
 			l2o.mode = mode;
+		if (flush_timeout >= 0)
+			l2o.flush_to = flush_timeout;
 
 		if (setsockopt(sock, SOL_L2CAP, L2CAP_OPTIONS, &l2o,
 							sizeof(l2o)) < 0) {
@@ -712,6 +777,7 @@ static gboolean parse_set_opts(struct set_opts *opts, GError **err,
 	opts->mode = L2CAP_MODE_BASIC;
 	opts->flushable = -1;
 	opts->force_active = 1;
+	opts->flush_timeout = -1;
 
 	while (opt != BT_IO_OPT_INVALID) {
 		switch (opt) {
@@ -772,6 +838,12 @@ static gboolean parse_set_opts(struct set_opts *opts, GError **err,
 			break;
 		case BT_IO_OPT_POWER_ACTIVE:
 			opts->force_active = va_arg(args, int);
+			break;
+		case BT_IO_OPT_FLUSH_TIMEOUT:
+			opts->flush_timeout = va_arg(args, int);
+			break;
+		case BT_IO_OPT_LE_PARAMS:
+			opts->le_params = va_arg(args, struct bt_le_params);
 			break;
 		default:
 			g_set_error(err, BT_IO_ERROR, BT_IO_ERROR_INVALID_ARGS,
@@ -1229,7 +1301,7 @@ gboolean bt_io_set(GIOChannel *io, BtIOType type, GError **err,
 	case BT_IO_L2CAP:
 		return l2cap_set(sock, opts.sec_level, opts.imtu, opts.omtu,
 				opts.mode, opts.master, opts.flushable,
-				opts.force_active, err);
+				opts.force_active, opts.flush_timeout, err);
 	case BT_IO_RFCOMM:
 		return rfcomm_set(sock, opts.sec_level, opts.master, opts.force_active,
 				err);
@@ -1272,7 +1344,7 @@ static GIOChannel *create_io(BtIOType type, gboolean server,
 							opts->cid, err) < 0)
 			goto failed;
 		if (!l2cap_set(sock, opts->sec_level, 0, 0, 0, -1, -1, opts->force_active,
-					err))
+					-1, err))
 			goto failed;
 		break;
 	case BT_IO_L2CAP:
@@ -1286,8 +1358,10 @@ static GIOChannel *create_io(BtIOType type, gboolean server,
 			goto failed;
 		if (!l2cap_set(sock, opts->sec_level, opts->imtu, opts->omtu,
 				opts->mode, opts->master, opts->flushable,
-				opts->force_active, err))
+				opts->force_active, opts->flush_timeout, err))
 			goto failed;
+		if (opts->cid == 4 && opts->le_params.scan_interval != 0xffff)
+			set_le_params(sock, &opts->le_params, err);
 		break;
 	case BT_IO_RFCOMM:
 		sock = socket(PF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);

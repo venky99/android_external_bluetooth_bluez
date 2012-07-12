@@ -31,11 +31,10 @@
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/uuid.h>
 
+#include "log.h"
 #include "att.h"
 #include "btio.h"
 #include "gattrib.h"
-
-#define GATT_TIMEOUT 30
 
 struct _GAttrib {
 	GIOChannel *io;
@@ -51,8 +50,10 @@ struct _GAttrib {
 	guint next_evt_id;
 	GDestroyNotify destroy;
 	GAttribDisconnectFunc disconnect;
+	GAttribDisconnectFunc disconnect_server;
 	gpointer destroy_user_data;
 	gpointer disc_user_data;
+	gpointer disc_server_data;
 };
 
 struct command {
@@ -142,6 +143,8 @@ static gboolean is_response(guint8 opcode)
 
 GAttrib *g_attrib_ref(GAttrib *attrib)
 {
+	DBG(" attrib: %p %d", attrib, attrib ? attrib->refs+1 : 0);
+
 	if (!attrib)
 		return NULL;
 
@@ -171,6 +174,8 @@ static void attrib_destroy(GAttrib *attrib)
 {
 	GSList *l;
 	struct command *c;
+
+	DBG(" attrib: %p", attrib);
 
 	while ((c = g_queue_pop_head(attrib->queue)))
 		command_destroy(c);
@@ -205,6 +210,8 @@ static void attrib_destroy(GAttrib *attrib)
 
 void g_attrib_unref(GAttrib *attrib)
 {
+	DBG(" attrib: %p %d", attrib, attrib ? attrib->refs-1 : 0);
+
 	if (!attrib)
 		return;
 
@@ -220,6 +227,20 @@ GIOChannel *g_attrib_get_channel(GAttrib *attrib)
 		return NULL;
 
 	return attrib->io;
+}
+
+gboolean g_attrib_set_disconnect_server_function(GAttrib *attrib,
+		GAttribDisconnectFunc disconnect, gpointer user_data)
+{
+	if (attrib == NULL)
+		return FALSE;
+
+	DBG("");
+
+	attrib->disconnect_server = disconnect;
+	attrib->disc_server_data = user_data;
+
+	return TRUE;
 }
 
 gboolean g_attrib_set_disconnect_function(GAttrib *attrib,
@@ -250,6 +271,8 @@ static gboolean disconnect_timeout(gpointer data)
 {
 	struct _GAttrib *attrib = data;
 
+	DBG(" attrib: %p", attrib);
+
 	attrib_destroy(attrib);
 
 	return FALSE;
@@ -263,8 +286,14 @@ static gboolean can_write_data(GIOChannel *io, GIOCondition cond,
 	GError *gerr = NULL;
 	gsize len;
 	GIOStatus iostat;
+	gboolean ret = FALSE;
+
+	DBG(" attrib: %p", attrib);
 
 	if (cond & (G_IO_HUP | G_IO_ERR | G_IO_NVAL)) {
+		if (attrib->disconnect_server)
+			attrib->disconnect_server(attrib->disc_server_data);
+
 		if (attrib->disconnect)
 			attrib->disconnect(attrib->disc_user_data);
 
@@ -277,14 +306,17 @@ static gboolean can_write_data(GIOChannel *io, GIOCondition cond,
 
 	iostat = g_io_channel_write_chars(io, (gchar *) cmd->pdu, cmd->len,
 								&len, &gerr);
-	if (iostat != G_IO_STATUS_NORMAL)
-		return FALSE;
+
+	if (iostat != G_IO_STATUS_NORMAL) {
+		ret = FALSE;
+		goto done;
+	}
 
 	if (cmd->expected == 0) {
 		g_queue_pop_head(attrib->queue);
 		command_destroy(cmd);
-
-		return TRUE;
+		ret = TRUE;
+		goto done;
 	}
 
 	cmd->sent = TRUE;
@@ -293,7 +325,9 @@ static gboolean can_write_data(GIOChannel *io, GIOCondition cond,
 		attrib->timeout_watch = g_timeout_add_seconds(GATT_TIMEOUT,
 						disconnect_timeout, attrib);
 
-	return FALSE;
+done:
+	g_attrib_unref(attrib);
+	return ret;
 }
 
 static void destroy_sender(gpointer data)
@@ -311,6 +345,34 @@ static void wake_up_sender(struct _GAttrib *attrib)
 			attrib, destroy_sender);
 }
 
+static void transport_error(struct _GAttrib *attrib, uint8_t *buf, gsize len)
+{
+	uint8_t err[5];
+	uint16_t handle;
+
+	switch(buf[0]) {
+	case ATT_OP_FIND_INFO_REQ:
+	case ATT_OP_FIND_BY_TYPE_REQ:
+	case ATT_OP_READ_BY_TYPE_REQ:
+	case ATT_OP_READ_REQ:
+	case ATT_OP_READ_BLOB_REQ:
+	case ATT_OP_READ_MULTI_REQ:
+	case ATT_OP_READ_BY_GROUP_REQ:
+	case ATT_OP_WRITE_REQ:
+	case ATT_OP_PREP_WRITE_REQ:
+	case ATT_OP_HANDLE_IND:
+		handle = att_get_u16(&buf[1]);
+		break;
+	default:
+		handle = 0;
+		break;
+	}
+
+	enc_error_resp(buf[0], handle, ATT_ECODE_INVALID_TRANSPORT,
+							err, sizeof(err));
+	g_attrib_send(attrib, 0, err[0], err, sizeof(err), NULL, NULL, NULL);
+}
+
 static gboolean received_data(GIOChannel *io, GIOCondition cond, gpointer data)
 {
 	struct _GAttrib *attrib = data;
@@ -319,17 +381,18 @@ static gboolean received_data(GIOChannel *io, GIOCondition cond, gpointer data)
 	uint8_t buf[512], status;
 	gsize len;
 	GIOStatus iostat;
-	gboolean qempty;
+	gboolean qempty, delivered = FALSE;
 
-	if (attrib->timeout_watch > 0) {
-		g_source_remove(attrib->timeout_watch);
-		attrib->timeout_watch = 0;
-	}
+	DBG(" io: %p, cond: %d, data: %p", io, cond, data);
 
 	if (cond & (G_IO_HUP | G_IO_ERR | G_IO_NVAL)) {
 		attrib->read_watch = 0;
+		if (attrib->disconnect_server)
+			attrib->disconnect_server(attrib->disc_server_data);
+
 		if (attrib->disconnect)
 			attrib->disconnect(attrib->disc_user_data);
+
 		return FALSE;
 	}
 
@@ -337,6 +400,12 @@ static gboolean received_data(GIOChannel *io, GIOCondition cond, gpointer data)
 
 	iostat = g_io_channel_read_chars(io, (gchar *) buf, sizeof(buf),
 								&len, NULL);
+
+	if (attrib->timeout_watch > 0 && is_response(buf[0]) == TRUE) {
+		g_source_remove(attrib->timeout_watch);
+		attrib->timeout_watch = 0;
+	}
+
 	if (iostat != G_IO_STATUS_NORMAL) {
 		status = ATT_ECODE_IO;
 		goto done;
@@ -346,13 +415,46 @@ static gboolean received_data(GIOChannel *io, GIOCondition cond, gpointer data)
 		struct event *evt = l->data;
 
 		if (evt->expected == buf[0] ||
-					evt->expected == GATTRIB_ALL_EVENTS)
+			evt->expected == GATTRIB_ALL_EVENTS ||
+			(evt->expected == GATTRIB_ALL_REQS && !(buf[0] & 1))) {
+			delivered = TRUE;
 			evt->func(buf, len, evt->user_data);
+		}
 	}
 
-	if (is_response(buf[0]) == FALSE)
-		return TRUE;
+	if (is_response(buf[0]) == FALSE) {
+		/* If response expected and no delivery, return error */
+		if (!delivered && opcode2expected(buf[0]))
+			transport_error(attrib, buf, len);
 
+		return TRUE;
+	}
+
+	/* Auto-elevate security if remote device complains */
+	if (buf[0] == ATT_OP_ERROR && (buf[4] == ATT_ECODE_INSUFF_ENC ||
+					buf[4] == ATT_ECODE_AUTHENTICATION)) {
+		BtIOSecLevel sec_level = BT_IO_SEC_LOW;
+
+		bt_io_get(io, BT_IO_L2CAP, NULL,
+			BT_IO_OPT_SEC_LEVEL, &sec_level,
+			BT_IO_OPT_INVALID);
+
+		/* If already at high, give up and process as normal */
+		if (sec_level == BT_IO_SEC_HIGH)
+			goto process_response;
+		else if (sec_level < BT_IO_SEC_MEDIUM)
+			sec_level = BT_IO_SEC_MEDIUM;
+		else
+			sec_level = BT_IO_SEC_HIGH;
+
+		if (bt_io_set(io, BT_IO_L2CAP, NULL,
+				BT_IO_OPT_SEC_LEVEL, sec_level,
+				BT_IO_OPT_INVALID)) {
+			goto done;
+		}
+	}
+
+process_response:
 	cmd = g_queue_pop_head(attrib->queue);
 	if (cmd == NULL) {
 		/* Keep the watch if we have events to report */
@@ -390,7 +492,7 @@ done:
 GAttrib *g_attrib_new(GIOChannel *io)
 {
 	struct _GAttrib *attrib;
-	uint16_t omtu;
+	uint16_t omtu, cid;
 
 	g_io_channel_set_encoding(io, NULL, NULL);
 	g_io_channel_set_buffered(io, FALSE);
@@ -408,10 +510,16 @@ GAttrib *g_attrib_new(GIOChannel *io)
 
 	if (bt_io_get(attrib->io, BT_IO_L2CAP, NULL,
 			BT_IO_OPT_OMTU, &omtu,
+			BT_IO_OPT_CID, &cid,
 			BT_IO_OPT_INVALID)) {
 		if (omtu == 0 || omtu > ATT_MAX_MTU)
 			omtu = ATT_MAX_MTU;
 	} else
+		omtu = ATT_DEFAULT_LE_MTU;
+
+	DBG(" cid %d mtu %d", cid, omtu);
+
+	if (cid == ATT_CID)
 		omtu = ATT_DEFAULT_LE_MTU;
 
 	attrib->buf = g_malloc0(omtu);
@@ -425,6 +533,9 @@ guint g_attrib_send(GAttrib *attrib, guint id, guint8 opcode,
 			gpointer user_data, GDestroyNotify notify)
 {
 	struct command *c;
+
+	if(!attrib || !pdu)
+		return 0;
 
 	c = g_try_new0(struct command, 1);
 	if (c == NULL)
@@ -446,6 +557,8 @@ guint g_attrib_send(GAttrib *attrib, guint id, guint8 opcode,
 		c->id = ++attrib->next_cmd_id;
 		g_queue_push_tail(attrib->queue, c);
 	}
+
+	g_attrib_ref(attrib);
 
 	if (g_queue_get_length(attrib->queue) == 1)
 		wake_up_sender(attrib);
@@ -568,6 +681,9 @@ guint g_attrib_register(GAttrib *attrib, guint8 opcode,
 
 	attrib->events = g_slist_append(attrib->events, event);
 
+	DBG(" attrib %p events %p event: %p - opcode %d - func %p id %d",
+		attrib, attrib->events, event, opcode, func, event->id);
+
 	return event->id;
 }
 
@@ -581,14 +697,19 @@ static gint event_cmp_by_id(gconstpointer a, gconstpointer b)
 
 gboolean g_attrib_is_encrypted(GAttrib *attrib)
 {
+	return g_attrib_sec_level(attrib) > BT_IO_SEC_LOW;
+}
+
+BtIOSecLevel g_attrib_sec_level(GAttrib *attrib)
+{
 	BtIOSecLevel sec_level;
 
 	if (!bt_io_get(attrib->io, BT_IO_L2CAP, NULL,
 			BT_IO_OPT_SEC_LEVEL, &sec_level,
 			BT_IO_OPT_INVALID))
-		return FALSE;
+		return BT_IO_SEC_LOW;
 
-	return sec_level > BT_IO_SEC_LOW;
+	return sec_level;
 }
 
 gboolean g_attrib_unregister(GAttrib *attrib, guint id)

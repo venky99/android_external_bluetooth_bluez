@@ -23,6 +23,9 @@
  *
  */
 
+/* Timeout for hci_send_req (milliseconds) */
+#define HCI_REQ_TIMEOUT		5000
+
 struct main_opts {
 	char		host_name[40];
 	unsigned long	flags;

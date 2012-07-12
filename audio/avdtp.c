@@ -4,6 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2010, Code Aurora Forum. All rights reserved.
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -57,6 +58,9 @@
 #include "sink.h"
 #include "source.h"
 
+#include <sys/ioctl.h>
+#include <bluetooth/hci.h>
+
 #define AVDTP_PSM 25
 
 #define MAX_SEID 0x3E
@@ -87,8 +91,10 @@
 
 #define REQ_TIMEOUT 6
 #define ABORT_TIMEOUT 2
-#define DISCONNECT_TIMEOUT 1
+#define DISCONNECT_TIMEOUT 3
+#define STREAM_SETUP_TIMEOUT 3 // 2 seconds for SDP to start
 #define STREAM_TIMEOUT 20
+#define AVDTP_FLUSH_TIMEOUT 0x14D
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 
@@ -318,6 +324,7 @@ struct avdtp_remote_sep {
 	uint8_t media_type;
 	struct avdtp_service_capability *codec;
 	gboolean delay_reporting;
+	struct avdtp_service_capability *protection;
 	GSList *caps; /* of type struct avdtp_service_capability */
 	struct avdtp_stream *stream;
 };
@@ -365,6 +372,7 @@ struct avdtp_stream {
 	GSList *caps;
 	GSList *callbacks;
 	struct avdtp_service_capability *codec;
+	struct avdtp_service_capability *protection;
 	guint io_id;		/* Transport GSource ID */
 	guint timer;		/* Waiting for other side to close or open
 				 * the transport channel */
@@ -426,6 +434,7 @@ struct avdtp {
 	gboolean stream_setup;
 
 	DBusPendingCall *pending_auth;
+	gboolean protection_required;
 };
 
 static GSList *servers = NULL;
@@ -451,6 +460,43 @@ static void avdtp_sep_set_state(struct avdtp *session,
 				struct avdtp_local_sep *sep,
 				avdtp_state_t state);
 static void auth_cb(DBusError *derr, void *user_data);
+
+void avdtp_reset_link_policy(struct avdtp *session)
+{
+	struct btd_adapter *adapter;
+	int dd=0, dev_id, ret;
+	struct hci_conn_info_req *cr;
+	uint8_t match;
+
+	DBG(" ");
+
+	adapter = manager_find_adapter(&session->server->src);
+	if (!adapter)
+		return;
+
+	dev_id = adapter_get_dev_id(adapter);
+	dd = hci_open_dev(dev_id);
+	if (dd < 0)
+		return;
+
+	cr = g_malloc(sizeof(*cr) + sizeof(struct hci_conn_info));
+	if (!cr) {
+		hci_close_dev(dd);
+		return;
+	}
+
+	bacpy(&cr->bdaddr, &session->dst);
+	cr->type = ACL_LINK;
+
+	if (ioctl(dd, HCIGETCONNINFO, (unsigned long) cr) < 0)
+		goto failed;
+
+	hci_write_link_policy(dd, htobs(cr->conn_info->handle), 0x5, 1000);
+
+failed:
+	hci_close_dev(dd);
+	g_free(cr);
+}
 
 static struct avdtp_server *find_server(GSList *list, const bdaddr_t *src)
 {
@@ -680,7 +726,7 @@ static void remove_disconnect_timer(struct avdtp *session)
 	session->stream_setup = FALSE;
 }
 
-static void set_disconnect_timer(struct avdtp *session)
+static void set_disconnect_timer(struct avdtp *session, int timeout)
 {
 	if (session->dc_timer)
 		remove_disconnect_timer(session);
@@ -690,7 +736,7 @@ static void set_disconnect_timer(struct avdtp *session)
 		return;
 	}
 
-	session->dc_timer = g_timeout_add_seconds(DISCONNECT_TIMEOUT,
+	session->dc_timer = g_timeout_add_seconds(timeout,
 						disconnect_timeout,
 						session);
 }
@@ -793,6 +839,8 @@ static void stream_free(struct avdtp_stream *stream)
 
 	if (stream->io_id)
 		g_source_remove(stream->io_id);
+
+	avdtp_reset_link_policy(stream->session);
 
 	g_slist_foreach(stream->callbacks, (GFunc) g_free, NULL);
 	g_slist_free(stream->callbacks);
@@ -1198,7 +1246,8 @@ void avdtp_unref(struct avdtp *session)
 			struct audio_device *dev;
 			dev = manager_get_device(&session->server->src,
 							&session->dst, FALSE);
-			audio_device_cancel_authorization(dev, auth_cb,
+			if (dev)
+				audio_device_cancel_authorization(dev, auth_cb,
 								session);
 			g_io_channel_shutdown(session->io, TRUE, NULL);
 			g_io_channel_unref(session->io);
@@ -1208,10 +1257,15 @@ void avdtp_unref(struct avdtp *session)
 		}
 
 		if (session->io)
-			set_disconnect_timer(session);
-		else if (!session->free_lock) /* Drop the local ref if we
-						 aren't connected */
-			session->ref--;
+			set_disconnect_timer(session, DISCONNECT_TIMEOUT);
+		else {
+			if (!session->free_lock) /* Drop the local ref if we
+						aren't connected */
+				session->ref--;
+			avdtp_set_state(session,
+					AVDTP_SESSION_STATE_DISCONNECTED);
+		}
+
 	}
 
 	if (session->ref > 0)
@@ -1299,7 +1353,8 @@ struct avdtp_remote_sep *avdtp_find_remote_sep(struct avdtp *session,
 
 static GSList *caps_to_list(uint8_t *data, int size,
 				struct avdtp_service_capability **codec,
-				gboolean *delay_reporting)
+				gboolean *delay_reporting,
+				struct avdtp_service_capability **protection)
 {
 	GSList *caps;
 	int processed;
@@ -1307,6 +1362,7 @@ static GSList *caps_to_list(uint8_t *data, int size,
 	if (delay_reporting)
 		*delay_reporting = FALSE;
 
+        *protection = NULL;
 	for (processed = 0, caps = NULL; processed + 2 <= size;) {
 		struct avdtp_service_capability *cap;
 		uint8_t length, category;
@@ -1334,6 +1390,11 @@ static GSList *caps_to_list(uint8_t *data, int size,
 			*codec = cap;
 		else if (category == AVDTP_DELAY_REPORTING && delay_reporting)
 			*delay_reporting = TRUE;
+
+		else if (category == AVDTP_CONTENT_PROTECTION &&
+				length >=
+				sizeof(struct avdtp_content_protection_capability))
+			*protection = cap;
 	}
 
 	return caps;
@@ -1526,7 +1587,8 @@ static gboolean avdtp_setconf_cmd(struct avdtp *session, uint8_t transaction,
 	stream->caps = caps_to_list(req->caps,
 					size - sizeof(struct setconf_req),
 					&stream->codec,
-					&stream->delay_reporting);
+					&stream->delay_reporting,
+					&stream->protection);
 
 	/* Verify that the Media Transport capability's length = 0. Reject otherwise */
 	for (l = stream->caps; l != NULL; l = g_slist_next(l)) {
@@ -1769,6 +1831,8 @@ static gboolean avdtp_close_cmd(struct avdtp *session, uint8_t transaction,
 
 	avdtp_sep_set_state(session, sep, AVDTP_STATE_CLOSING);
 
+	avdtp_reset_link_policy(session);
+
 	if (!avdtp_send(session, transaction, AVDTP_MSG_TYPE_ACCEPT,
 						AVDTP_CLOSE, NULL, 0))
 		return FALSE;
@@ -1828,6 +1892,8 @@ static gboolean avdtp_suspend_cmd(struct avdtp *session, uint8_t transaction,
 
 		avdtp_sep_set_state(session, sep, AVDTP_STATE_OPEN);
 	}
+
+	avdtp_reset_link_policy(session);
 
 	return avdtp_send(session, transaction, AVDTP_MSG_TYPE_ACCEPT,
 						AVDTP_SUSPEND, NULL, 0);
@@ -2151,7 +2217,7 @@ static gboolean session_cb(GIOChannel *chan, GIOCondition cond,
 		}
 
 		if (session->ref == 1 && !session->streams && !session->req)
-			set_disconnect_timer(session);
+			set_disconnect_timer(session, DISCONNECT_TIMEOUT);
 
 		if (session->streams && session->dc_timer)
 			remove_disconnect_timer(session);
@@ -2302,7 +2368,7 @@ static struct avdtp *avdtp_get_internal(const bdaddr_t *src, const bdaddr_t *dst
 	 * but just setting of the initial state */
 	session->state = AVDTP_SESSION_STATE_DISCONNECTED;
 	session->auto_dc = TRUE;
-
+	session->pending_open = NULL;
 	session->version = get_version(session);
 
 	server->sessions = g_slist_append(server->sessions, session);
@@ -2375,7 +2441,7 @@ static void avdtp_connect_cb(GIOChannel *chan, GError *err, gpointer user_data)
 						NULL);
 
 		if (session->stream_setup) {
-			set_disconnect_timer(session);
+			set_disconnect_timer(session, STREAM_SETUP_TIMEOUT);
 			avdtp_set_auto_disconnect(session, FALSE);
 		}
 	} else if (session->pending_open)
@@ -2516,6 +2582,28 @@ static GIOChannel *l2cap_connect(struct avdtp *session)
 				BT_IO_OPT_DEST_BDADDR, &session->dst,
 				BT_IO_OPT_PSM, AVDTP_PSM,
 				BT_IO_OPT_INVALID);
+	if (!io) {
+		error("%s", err->message);
+		g_error_free(err);
+		return NULL;
+	}
+
+	return io;
+}
+
+static GIOChannel *l2cap_stream_connect(struct avdtp *session)
+{
+	GError *err = NULL;
+	GIOChannel *io;
+
+	io = bt_io_connect(BT_IO_L2CAP, avdtp_connect_cb, session,
+				NULL, &err,
+				BT_IO_OPT_SOURCE_BDADDR, &session->server->src,
+				BT_IO_OPT_DEST_BDADDR, &session->dst,
+				BT_IO_OPT_PSM, AVDTP_PSM,
+				BT_IO_OPT_FLUSH_TIMEOUT, AVDTP_FLUSH_TIMEOUT,
+				BT_IO_OPT_INVALID);
+
 	if (!io) {
 		error("%s", err->message);
 		g_error_free(err);
@@ -2725,6 +2813,7 @@ static gboolean avdtp_discover_resp(struct avdtp *session,
 {
 	int sep_count, i;
 	uint8_t getcap_cmd;
+	gboolean stream_found;
 
 	if (session->version >= 0x0103 && session->server->version >= 0x0103)
 		getcap_cmd = AVDTP_GET_ALL_CAPABILITIES;
@@ -2732,6 +2821,7 @@ static gboolean avdtp_discover_resp(struct avdtp *session,
 		getcap_cmd = AVDTP_GET_CAPABILITIES;
 
 	sep_count = size / sizeof(struct seid_info);
+	stream_found = FALSE;
 
 	for (i = 0; i < sep_count; i++) {
 		struct avdtp_remote_sep *sep;
@@ -2745,10 +2835,19 @@ static gboolean avdtp_discover_resp(struct avdtp *session,
 
 		stream = find_stream_by_rseid(session, resp->seps[i].seid);
 
+		if (stream)
+			stream_found = TRUE;
+
 		sep = find_remote_sep(session->seps, resp->seps[i].seid);
 		if (!sep) {
-			if (resp->seps[i].inuse && !stream)
-				continue;
+			if (resp->seps[i].inuse && !stream) {
+				if (((i + 1) == sep_count) && !stream_found) {
+					finalize_discovery(session, -EINPROGRESS);
+					return TRUE;
+				}
+				else
+					continue;
+			}
 			sep = g_new0(struct avdtp_remote_sep, 1);
 			session->seps = g_slist_append(session->seps, sep);
 		}
@@ -2803,11 +2902,13 @@ static gboolean avdtp_get_capabilities_resp(struct avdtp *session,
 		g_slist_free(sep->caps);
 		sep->caps = NULL;
 		sep->codec = NULL;
+		sep->protection = NULL;
 		sep->delay_reporting = FALSE;
 	}
 
 	sep->caps = caps_to_list(resp->caps, size - sizeof(struct getcap_resp),
-					&sep->codec, &sep->delay_reporting);
+					&sep->codec, &sep->delay_reporting,
+					 &sep->protection);
 
 	return TRUE;
 }
@@ -2840,7 +2941,7 @@ static gboolean avdtp_open_resp(struct avdtp *session, struct avdtp_stream *stre
 {
 	struct avdtp_local_sep *sep = stream->lsep;
 
-	stream->io = l2cap_connect(session);
+	stream->io = l2cap_stream_connect(session);
 	if (!stream->io) {
 		avdtp_sep_set_state(session, sep, AVDTP_STATE_IDLE);
 		return FALSE;
@@ -3294,6 +3395,31 @@ gboolean avdtp_get_delay_reporting(struct avdtp_remote_sep *sep)
 {
 	return sep->delay_reporting;
 }
+struct avdtp_service_capability *avdtp_get_protection(struct avdtp_stream *stream)
+{
+	if (stream) {
+		return stream->protection;
+	}
+	return NULL;
+}
+
+struct avdtp_service_capability *avdtp_get_remote_sep_protection(struct avdtp_remote_sep *sep)
+{
+	if (sep) {
+		return sep->protection;
+	}
+	return NULL;
+}
+
+void avdtp_set_protection_req(struct avdtp *session, gboolean value)
+{
+	session->protection_required = value;
+}
+
+gboolean avdtp_get_protection_req(struct avdtp *session)
+{
+	return session->protection_required;
+}
 
 struct avdtp_stream *avdtp_get_stream(struct avdtp_remote_sep *sep)
 {
@@ -3407,7 +3533,7 @@ int avdtp_get_configuration(struct avdtp *session, struct avdtp_stream *stream)
 							&req, sizeof(req));
 }
 
-static void copy_capabilities(gpointer data, gpointer user_data)
+void copy_capabilities(gpointer data, gpointer user_data)
 {
 	struct avdtp_service_capability *src_cap = data;
 	struct avdtp_service_capability *dst_cap;
@@ -3445,6 +3571,7 @@ int avdtp_set_configuration(struct avdtp *session,
 	new_stream->session = session;
 	new_stream->lsep = lsep;
 	new_stream->rseid = rsep->seid;
+	new_stream->protection = NULL;
 
 	if (rsep->delay_reporting && lsep->delay_reporting) {
 		struct avdtp_service_capability *delay_reporting;
@@ -3473,6 +3600,9 @@ int avdtp_set_configuration(struct avdtp *session,
 		cap = l->data;
 		memcpy(ptr, cap, cap->length + 2);
 		ptr += cap->length + 2;
+		if (cap->category == AVDTP_CONTENT_PROTECTION) {
+			new_stream->protection = cap;
+		}
 	}
 
 	err = send_request(session, FALSE, new_stream,
@@ -3599,6 +3729,8 @@ int avdtp_close(struct avdtp *session, struct avdtp_stream *stream,
 		return -EINVAL;
 	}
 
+	avdtp_reset_link_policy(session);
+
 	if (immediate && session->req && stream == session->req->stream)
 		return avdtp_abort(session, stream);
 
@@ -3625,6 +3757,7 @@ int avdtp_suspend(struct avdtp *session, struct avdtp_stream *stream)
 
 	memset(&req, 0, sizeof(req));
 	req.acp_seid = stream->rseid;
+	avdtp_reset_link_policy(session);
 
 	return send_request(session, FALSE, stream, AVDTP_SUSPEND,
 							&req, sizeof(req));
@@ -3940,4 +4073,13 @@ gboolean avdtp_remove_state_cb(unsigned int id)
 	}
 
 	return FALSE;
+}
+
+void avdtp_disconnect_session(struct avdtp *session)
+{
+	if (session->io) {
+		g_io_channel_shutdown(session->io, FALSE, NULL);
+		g_io_channel_unref(session->io);
+		session->io = NULL;
+	}
 }

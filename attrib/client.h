@@ -22,7 +22,19 @@
  *
  */
 
+struct gatt_service;
+
 GSList *attrib_client_register(DBusConnection *connection,
 					struct btd_device *device, int psm,
 					GAttrib *attrib, GSList *primaries);
 void attrib_client_unregister(struct btd_device *device);
+void attrib_client_disconnect(struct btd_device *device);
+GAttrib *attrib_client_find (struct btd_device *device);
+struct gatt_service *gatt_create(DBusConnection *connection,
+                                   struct btd_device *device, int psm);
+DBusMessage *le_connect_request(DBusConnection *conn,
+					DBusMessage *msg, void *data);
+DBusMessage *le_connect_request_cancel(DBusConnection *conn,
+					DBusMessage *msg, void *data);
+DBusMessage *le_disconnect_request(DBusConnection *conn,
+					DBusMessage *msg, void *data);

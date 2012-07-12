@@ -3,6 +3,7 @@
  *  BlueZ - Bluetooth protocol stack for Linux
  *
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2010-2012, Code Aurora Forum. All rights reserved.
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -223,6 +224,7 @@ struct bt_get_capabilities_rsp {
 	char			source[18];	/* Address of the local Device */
 	char			destination[18];/* Address of the remote Device */
 	char			object[128];	/* DBus object path */
+	uint8_t			isEdrCapable;	/* EDR capable */
 	uint8_t			data[0];	/* First codec_capabilities_t */
 } __attribute__ ((packed));
 
@@ -250,6 +252,7 @@ struct bt_set_configuration_req {
 struct bt_set_configuration_rsp {
 	bt_audio_msg_header_t	h;
 	uint16_t		link_mtu;	/* Max length that transport supports */
+	uint16_t		content_protection;	/* Content protection that transport supports */
 } __attribute__ ((packed));
 
 #define BT_STREAM_ACCESS_READ		0
