@@ -1333,6 +1333,11 @@ int a2dp_write(a2dpData d, const void* buffer, int count)
 
 	while (frames_left >= codesize) {
 		/* Enough data to encode (sbc wants 512 byte blocks) */
+		if (data->sbc.priv == NULL) {
+			ERR("bad state");
+			ret = -EINVAL;
+			goto done;
+		}
 		encoded = sbc_encode(&(data->sbc), src, codesize,
 					data->buffer + data->count,
 					sizeof(data->buffer) - data->count,
