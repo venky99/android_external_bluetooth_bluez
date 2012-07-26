@@ -1057,7 +1057,8 @@ static void print_service_class(void *value, void *userData)
 		printf("  UUID 128: %s\n", UUID_str);
 
 	/* Determine if this is an GOEP 2.0 capable profile. */
-	if (userData && sdp_uuid_to_proto(uuid) == OBEX_OBJPUSH_PROFILE_ID) {
+	if (userData && ((sdp_uuid_to_proto(uuid) == OBEX_OBJPUSH_PROFILE_ID) ||
+		(sdp_uuid_to_proto(uuid) == OBEX_FILETRANS_PROFILE_ID))) {
 		*((int*)userData) = 1;
 	}
 }
