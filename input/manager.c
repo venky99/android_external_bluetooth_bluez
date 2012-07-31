@@ -3,6 +3,7 @@
  *  BlueZ - Bluetooth protocol stack for Linux
  *
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2012 Code Aurora Forum. All rights reserved
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -37,6 +38,7 @@
 #include "log.h"
 #include "../src/adapter.h"
 #include "../src/device.h"
+#include "../src/glib-helper.h"
 
 #include "device.h"
 #include "server.h"
@@ -62,6 +64,7 @@ static int hid_device_probe(struct btd_device *device, GSList *uuids)
 	const gchar *path = device_get_path(device);
 	const sdp_record_t *rec = btd_device_get_record(device, uuids->data);
 	bdaddr_t src, dst;
+	sdp_data_t *pdlist;
 
 	DBG("path %s", path);
 
@@ -70,6 +73,13 @@ static int hid_device_probe(struct btd_device *device, GSList *uuids)
 
 	adapter_get_address(adapter, &src);
 	device_get_address(device, &dst);
+	if (rec)
+		pdlist = sdp_data_get(rec, SDP_ATTR_HID_SDP_DISABLE);
+
+	if (pdlist && pdlist->val.uint8) {
+		DBG("cancel discovery is issued");
+		bt_cancel_discovery(&src, &dst);
+	}
 
 	return input_device_register(connection, device, path, &src, &dst,
 				HID_UUID, rec->handle, idle_timeout * 60);
