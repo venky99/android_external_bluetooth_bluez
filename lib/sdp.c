@@ -6,6 +6,7 @@
  *  Copyright (C) 2002-2003  Maxim Krasnyansky <maxk@qualcomm.com>
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
  *  Copyright (C) 2002-2003  Stephen Crane <steve.crane@rococosoft.com>
+ *  Copyright (C) 2012 Code Aurora Forum. All rights reserved
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -1185,7 +1186,7 @@ static sdp_data_t *extract_str(const void *p, int bufsize, int *len)
 		}
 		n = ntohs(bt_get_unaligned((uint16_t *) p));
 		p += sizeof(uint16_t);
-		*len += sizeof(uint16_t) + n;
+		*len += sizeof(uint16_t);
 		bufsize -= sizeof(uint16_t);
 		break;
 	default:
