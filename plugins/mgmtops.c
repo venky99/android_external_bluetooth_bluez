@@ -69,6 +69,7 @@ static struct controller_info {
 	gboolean discoverable;
 	gboolean pairable;
 	uint8_t sec_mode;
+	uint8_t le_white_list_size;
 	GSList *connections;
 	GSList *mgmt_event_callback;
 } *controllers = NULL;
@@ -1015,6 +1016,7 @@ static void read_info_complete(int sk, uint16_t index, void *buf, size_t len)
 	info->discoverable = rp->discoverable;
 	info->pairable = rp->pairable;
 	info->sec_mode = rp->sec_mode;
+	info->le_white_list_size = rp->le_white_list_size;
 	bacpy(&info->bdaddr, &rp->bdaddr);
 	memcpy(info->dev_class, rp->dev_class, 3);
 	memcpy(info->features, rp->features, 8);
@@ -2521,6 +2523,121 @@ static int mgmt_unset_rssi_reporter(int index, bdaddr_t *bdaddr)
 	return 0;
 }
 
+static int mgmt_le_add_dev_white_list(int index, bdaddr_t *bdaddr,
+							uint8_t addr_type)
+{
+	char buf[MGMT_HDR_SIZE + sizeof(struct mgmt_cp_le_add_dev_white_list)];
+	struct mgmt_hdr *hdr = (void *) buf;
+	struct mgmt_cp_le_add_dev_white_list *cp = (void *) &buf[sizeof(*hdr)];
+	char addr[18];
+
+	ba2str(bdaddr, addr);
+	DBG("hci%d bdaddr %s", index, addr);
+
+	memset(buf, 0, sizeof(buf));
+
+	hdr->opcode = htobs(MGMT_OP_LE_ADD_DEV_WHITE_LIST);
+	hdr->index = htobs(index);
+	hdr->len = htobs(sizeof(*cp));
+
+	bacpy(&cp->bdaddr, bdaddr);
+	cp->addr_type = addr_type;
+
+	if (write(mgmt_sock, &buf, sizeof(buf)) < 0)
+		return -errno;
+
+	return 0;
+}
+
+static int mgmt_le_remove_dev_white_list(int index, bdaddr_t *bdaddr,
+							uint8_t addr_type)
+{
+	char buf[MGMT_HDR_SIZE + sizeof(struct mgmt_cp_le_remove_dev_white_list)];
+	struct mgmt_hdr *hdr = (void *) buf;
+	struct mgmt_cp_le_remove_dev_white_list *cp = (void *) &buf[sizeof(*hdr)];
+	char addr[18];
+
+	ba2str(bdaddr, addr);
+	DBG("hci%d bdaddr %s", index, addr);
+
+	memset(buf, 0, sizeof(buf));
+
+	hdr->opcode = htobs(MGMT_OP_LE_REMOVE_DEV_WHITE_LIST);
+	hdr->index = htobs(index);
+	hdr->len = htobs(sizeof(*cp));
+
+	bacpy(&cp->bdaddr, bdaddr);
+	cp->addr_type = addr_type;
+
+	if (write(mgmt_sock, &buf, sizeof(buf)) < 0)
+		return -errno;
+
+	return 0;
+}
+
+static int mgmt_le_create_conn_white_list(int index)
+{
+	struct mgmt_hdr hdr;
+
+	DBG("index %d", index);
+
+	memset(&hdr, 0, sizeof(hdr));
+	hdr.opcode = htobs(MGMT_OP_LE_CREATE_CONN_WHITE_LIST);
+	hdr.index = htobs(index);
+
+	if (write(mgmt_sock, &hdr, sizeof(hdr)) < 0)
+		return -errno;
+
+	return 0;
+}
+
+static int mgmt_le_cancel_create_conn_white_list(int index)
+{
+	struct mgmt_hdr hdr;
+
+	DBG("index %d", index);
+
+	memset(&hdr, 0, sizeof(hdr));
+	hdr.opcode = htobs(MGMT_OP_LE_CANCEL_CREATE_CONN_WHITE_LIST);
+	hdr.index = htobs(index);
+
+	if (write(mgmt_sock, &hdr, sizeof(hdr)) < 0)
+		return -errno;
+
+	return 0;
+}
+
+static int mgmt_le_read_white_list_size(int index, uint8_t *size)
+{
+
+	struct controller_info *info = &controllers[index];
+
+	DBG("index %d", index);
+
+	if (!info->valid)
+		return -ENODEV;
+
+	*size = info->le_white_list_size;
+
+	return 0;
+}
+
+static int mgmt_le_clear_white_list(int index)
+{
+	struct mgmt_hdr hdr;
+
+	DBG("index %d", index);
+
+	memset(&hdr, 0, sizeof(hdr));
+	hdr.opcode = htobs(MGMT_OP_LE_CLEAR_WHITE_LIST);
+	hdr.index = htobs(index);
+
+	if (write(mgmt_sock, &hdr, sizeof(hdr)) < 0)
+		return -errno;
+
+	return 0;
+}
+
 static struct btd_adapter_ops mgmt_ops = {
 	.setup = mgmt_setup,
 	.cleanup = mgmt_cleanup,
@@ -2565,6 +2682,12 @@ static struct btd_adapter_ops mgmt_ops = {
 	.set_connection_params = mgmt_set_connection_params,
 	.set_rssi_reporter = mgmt_set_rssi_reporter,
 	.unset_rssi_reporter = mgmt_unset_rssi_reporter,
+	.le_create_conn_white_list = mgmt_le_create_conn_white_list,
+	.le_cancel_create_conn_white_list = mgmt_le_cancel_create_conn_white_list,
+	.le_read_white_list_size = mgmt_le_read_white_list_size,
+	.le_add_dev_white_list = mgmt_le_add_dev_white_list,
+	.le_remove_dev_white_list = mgmt_le_remove_dev_white_list,
+	.le_clear_white_list = mgmt_le_clear_white_list,
 };
 
 static int mgmt_init(void)

@@ -104,7 +104,7 @@ gboolean device_is_authenticating(struct btd_device *device);
 gboolean device_is_authorizing(struct btd_device *device);
 void device_set_authorizing(struct btd_device *device, gboolean auth);
 void device_add_connection(struct btd_device *device, DBusConnection *conn,
-								uint8_t le);
+				uint8_t le, gboolean le_io_conn_pending);
 void device_remove_connection(struct btd_device *device, DBusConnection *conn);
 int device_get_handle(struct btd_device *device, int dd, uint16_t *handle);
 void device_update_rssi(struct btd_device *device, int8_t rssi);

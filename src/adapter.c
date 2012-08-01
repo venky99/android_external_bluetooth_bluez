@@ -156,6 +156,8 @@ struct btd_adapter {
 
 	gboolean name_stored;
 
+	gboolean le_white_list_in_use;
+
 	GSList *loaded_drivers;
 	struct btd_device *streaming_device;
 };
@@ -1274,6 +1276,13 @@ static struct btd_device *adapter_create_device(DBusConnection *conn,
 	return device;
 }
 
+struct btd_device *adapter_create_le_device(DBusConnection *conn,
+						struct btd_adapter *adapter,
+						const char *address)
+{
+	return adapter_create_device(conn, adapter, address, DEVICE_TYPE_LE);
+}
+
 void adapter_remove_device(DBusConnection *conn, struct btd_adapter *adapter,
 						struct btd_device *device,
 						gboolean remove_storage)
@@ -1912,6 +1921,79 @@ failed:
 				DBUS_TYPE_INVALID);
 	} else
 		reply = btd_error_failed(msg, strerror(-err));
+
+	return reply;
+}
+
+static DBusMessage *le_create_conn_white_list(DBusConnection *conn,
+						DBusMessage *msg, void *data)
+{
+	struct btd_adapter *adapter = data;
+	const char *sender = dbus_message_get_sender(msg);
+	DBusMessage *reply;
+	int err;
+
+	DBG("");
+	if (!adapter->up || adapter->le_white_list_in_use)
+		return btd_error_not_ready(msg);
+
+	adapter_ops->le_create_conn_white_list(adapter->dev_id);
+
+	adapter->le_white_list_in_use = TRUE;
+
+	reply = dbus_message_new_method_return(msg);
+
+	if (!reply)
+		return btd_error_failed;
+
+	return reply;
+}
+
+static DBusMessage *le_cancel_create_conn_white_list(DBusConnection *conn,
+						DBusMessage *msg, void *data)
+{
+	struct btd_adapter *adapter = data;
+	const char *sender = dbus_message_get_sender(msg);
+	DBusMessage *reply;
+	int err;
+
+	DBG("");
+	if (!adapter->up || !adapter->le_white_list_in_use)
+		return btd_error_not_ready(msg);
+
+	adapter_ops->le_cancel_create_conn_white_list(adapter->dev_id);
+
+	adapter->le_white_list_in_use = FALSE;
+
+	reply = dbus_message_new_method_return(msg);
+
+	if (!reply)
+		return btd_error_failed;
+
+	return reply;
+}
+
+static DBusMessage *le_clear_white_list(DBusConnection *conn,
+						DBusMessage *msg, void *data)
+{
+	struct btd_adapter *adapter = data;
+	const char *sender = dbus_message_get_sender(msg);
+	DBusMessage *reply;
+	int err;
+
+	DBG("");
+
+	if (!adapter->up || adapter->le_white_list_in_use)
+		return btd_error_not_ready(msg);
+
+	adapter_ops->le_clear_white_list(adapter->dev_id);
+
+	adapter->le_white_list_in_use = FALSE;
+
+	reply = dbus_message_new_method_return(msg);
+
+	if (!reply)
+		return btd_error_failed;
 
 	return reply;
 }
@@ -3076,6 +3158,12 @@ static GDBusMethodTable adapter_methods[] = {
 	{ "RemoveReservedServiceRecords", "au",    "",	remove_reserved_service_records  },
 	{ "DisconnectAllConnections", "",    "",	adapter_disconnect_all_connections  },
 	{ "CreateLeDevice",	"s",	"o",	create_le_device},
+	{ "CreateLeConnWhiteList",	"",	"",	le_create_conn_white_list,
+							G_DBUS_METHOD_FLAG_ASYNC},
+	{ "CancelCreateLeConnWhiteList",	"",	"",	le_cancel_create_conn_white_list,
+							G_DBUS_METHOD_FLAG_ASYNC},
+	{ "ClearLeWhiteList",	"",	"",	le_clear_white_list,
+							G_DBUS_METHOD_FLAG_ASYNC},
 	{ }
 };
 
@@ -3911,6 +3999,8 @@ gboolean adapter_init(struct btd_adapter *adapter)
 	 * the are active connections before the daemon've started */
 	load_connections(adapter);
 
+	adapter->le_white_list_in_use = FALSE;
+
 	adapter->initialized = TRUE;
 
 	return TRUE;
@@ -4505,12 +4595,21 @@ struct agent *adapter_get_agent(struct btd_adapter *adapter)
 void adapter_add_connection(struct btd_adapter *adapter,
 					struct btd_device *device, uint8_t le)
 {
+	gboolean le_io_conn_pending;
 	if (g_slist_find(adapter->connections, device)) {
 		error("Device is already marked as connected");
 		return;
 	}
 
-	device_add_connection(device, connection, le);
+	if (adapter->le_white_list_in_use) {
+		error("white list was in use and we got conn complete");
+		le_io_conn_pending = TRUE;
+		adapter->le_white_list_in_use = FALSE;
+	} else {
+		le_io_conn_pending = FALSE;
+	}
+
+	device_add_connection(device, connection, le, le_io_conn_pending);
 
 	adapter->connections = g_slist_append(adapter->connections, device);
 }
@@ -5001,4 +5100,28 @@ int btd_adapter_unregister_rssi_watcher(struct btd_adapter *adapter,
 {
 	DBG("btd_adapter_unregister_rssi_watcher");
 	return adapter_ops->unset_rssi_reporter(adapter->dev_id, bdaddr);
+}
+
+int btd_adapter_le_add_dev_white_list(struct btd_adapter *adapter,
+		bdaddr_t *bdaddr, uint8_t addr_type)
+{
+	DBG("");
+	if (adapter->le_white_list_in_use) {
+		DBG("ERROR: white_list_in_use");
+		return -EINVAL;
+	}
+	return adapter_ops->le_add_dev_white_list(adapter->dev_id, bdaddr,
+								addr_type);
+}
+
+int btd_adapter_le_remove_dev_white_list(struct btd_adapter *adapter,
+		bdaddr_t *bdaddr, uint8_t addr_type)
+{
+	DBG("");
+	if (adapter->le_white_list_in_use) {
+		DBG("ERROR: white_list_in_use");
+		return -EINVAL;
+	}
+	return adapter_ops->le_remove_dev_white_list(adapter->dev_id, bdaddr,
+								addr_type);
 }

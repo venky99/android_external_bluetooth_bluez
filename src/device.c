@@ -908,6 +908,42 @@ static DBusMessage *disconnect(DBusConnection *conn, DBusMessage *msg,
 	return NULL;
 }
 
+static DBusMessage *add_to_white_list(DBusConnection *conn, DBusMessage *msg,
+							void *user_data)
+{
+	struct btd_device *device = user_data;
+	DBusMessage *reply;
+
+	DBG("");
+
+	btd_adapter_le_add_dev_white_list(device->adapter, &device->bdaddr, 0);
+
+	reply = dbus_message_new_method_return(msg);
+
+	if (!reply)
+		return btd_error_failed;
+
+	return reply;
+}
+
+static DBusMessage *remove_from_white_list(DBusConnection *conn, DBusMessage *msg,
+							void *user_data)
+{
+	struct btd_device *device = user_data;
+	DBusMessage *reply;
+
+	DBG("");
+
+	btd_adapter_le_remove_dev_white_list(device->adapter, &device->bdaddr, 0);
+
+	reply = dbus_message_new_method_return(msg);
+
+	if (!reply)
+		return btd_error_failed;
+
+	return reply;
+}
+
 static DBusMessage *get_service_attribute_value_reply(DBusMessage *msg, DBusConnection *conn,
 							sdp_data_t *attr)
 {
@@ -969,6 +1005,8 @@ static DBusMessage *set_connection_params(DBusConnection *conn,
 	struct bt_le_params params;
 	bdaddr_t src;
 	int ret;
+
+	DBG("");
 
 	if (dbus_message_get_args(msg, NULL,
 			DBUS_TYPE_BYTE, &params.prohibit_remote_chg,
@@ -1149,6 +1187,10 @@ static GDBusMethodTable device_methods[] = {
 	{ "LeConnectReq",	"yyqqqqqqqqq", "", le_connect_request },
 	{ "LeConnectCancel", "", "", le_connect_request_cancel },
 	{ "LeDisconnectReq", "", "", le_disconnect_request },
+	{ "AddToWhiteList", "", "", add_to_white_list,
+					G_DBUS_METHOD_FLAG_ASYNC},
+	{ "RemoveFromWhiteList", "", "",	remove_from_white_list,
+					G_DBUS_METHOD_FLAG_ASYNC},
 	{ }
 };
 
@@ -1164,7 +1206,7 @@ gboolean device_is_connected(struct btd_device *device)
 }
 
 void device_add_connection(struct btd_device *device, DBusConnection *conn,
-								uint8_t le)
+				uint8_t le, gboolean le_io_conn_pending)
 {
 	if (device->connected) {
 		char addr[18];
@@ -1173,6 +1215,10 @@ void device_add_connection(struct btd_device *device, DBusConnection *conn,
 		return;
 	}
 
+	if (le_io_conn_pending) {
+		DBG("io_conn_pending");
+		client_create_le_io_connect(device);
+	}
 	device->connected = TRUE;
 	device->type = le ? DEVICE_TYPE_LE : DEVICE_TYPE_BREDR;
 

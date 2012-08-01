@@ -107,6 +107,10 @@ void adapter_remove_device(DBusConnection *conn, struct btd_adapter *adapter,
 						struct btd_device *device,
 						gboolean remove_storage);
 
+struct btd_device *adapter_create_le_device(DBusConnection *conn,
+						struct btd_adapter *adapter,
+						const char *address);
+
 int adapter_resolve_names(struct btd_adapter *adapter);
 
 struct btd_adapter *adapter_create(DBusConnection *conn, int id);
@@ -238,6 +242,14 @@ struct btd_adapter_ops {
 			uint16_t rssi_threshold, uint16_t interval,
 			gboolean updateOnThreshExceed);
 	int (*unset_rssi_reporter) (int index, bdaddr_t *bdaddr);
+	int (*le_create_conn_white_list) (int index);
+	int (*le_cancel_create_conn_white_list) (int index);
+	int (*le_read_white_list_size) (int index, uint8_t *size);
+	int (*le_add_dev_white_list) (int index, bdaddr_t *bdaddr,
+							uint8_t addr_type);
+	int (*le_remove_dev_white_list) (int index, bdaddr_t *bdaddr,
+							uint8_t addr_type);
+	int (*le_clear_white_list) (int index);
 };
 
 int btd_register_adapter_ops(struct btd_adapter_ops *ops, gboolean priority);
