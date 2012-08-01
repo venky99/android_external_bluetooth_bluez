@@ -163,6 +163,11 @@ struct btd_device {
 	GIOChannel	*tmp_sdp_io;		/* temp Channel */
 
 	int8_t		rssi;
+
+	/* LE conn params */
+	uint16_t	interval;
+	uint16_t	latency;
+	uint16_t	timeout;
 };
 
 static uint16_t uuid_list[] = {
@@ -1223,6 +1228,21 @@ void device_update_rssi(struct btd_device *device, int8_t rssi)
 	emit_property_changed(conn, device->path,
 		DEVICE_INTERFACE, "RSSI",
 		DBUS_TYPE_INT16, &device->rssi);
+}
+
+void device_update_le_conn_params(struct btd_device *device, uint16_t interval,
+                                        uint16_t latency, uint16_t timeout)
+{
+	DBusConnection *conn = get_dbus_connection();
+
+	device->interval = interval;
+	device->latency = latency;
+	device->timeout = timeout;
+	DBG("device->interval property LE_CONN_PARAM, value : %u ", device->interval);
+	emit_property_changed(conn, device->path,
+		DEVICE_INTERFACE, "LeConnParams",
+		DBUS_TYPE_UINT16, &device->interval);
+
 }
 
 int device_get_handle(struct btd_device *device, int dd, uint16_t *handle)

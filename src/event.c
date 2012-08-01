@@ -796,6 +796,18 @@ void btd_event_rssi_update(bdaddr_t *local, bdaddr_t *peer, int8_t rssi)
 	device_update_rssi(device, rssi);
 }
 
+void btd_event_le_conn_params(bdaddr_t *local, bdaddr_t *peer,
+		uint16_t interval, uint16_t latency, uint16_t timeout)
+{
+	struct btd_adapter *adapter;
+	struct btd_device *device;
+
+	if (!get_adapter_and_device(local, peer, &adapter, &device, TRUE))
+		return;
+
+	device_update_le_conn_params(device, interval, latency, timeout);
+}
+
 void btd_event_conn_complete(bdaddr_t *local, bdaddr_t *peer, uint8_t le)
 {
 	struct btd_adapter *adapter;

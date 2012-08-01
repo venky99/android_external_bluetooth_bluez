@@ -1729,6 +1729,27 @@ static void mgmt_remote_features(int sk, uint16_t index, void *buf, size_t len)
 	write_features_info(&info->bdaddr, &ev->bdaddr, ev->features, NULL);
 }
 
+static void mgmt_le_conn_params(int sk, uint16_t index, void *buf, size_t len)
+{
+	struct mgmt_ev_le_conn_params *ev = buf;
+	struct controller_info *info;
+
+	if (len < sizeof(*ev)) {
+		error("Too small mgmt_le_conn_params packet");
+		return;
+	}
+
+	if (index > max_index) {
+		error("Unexpected index %u in le_conn_params event", index);
+		return;
+	}
+
+	info = &controllers[index];
+
+	btd_event_le_conn_params(&info->bdaddr, &ev->bdaddr,
+				ev->interval, ev->latency, ev->timeout);
+}
+
 static gboolean mgmt_event(GIOChannel *io, GIOCondition cond, gpointer user_data)
 {
 	char buf[MGMT_BUF_SIZE];
@@ -1852,6 +1873,9 @@ static gboolean mgmt_event(GIOChannel *io, GIOCondition cond, gpointer user_data
 		break;
 	case MGMT_EV_REMOTE_FEATURES:
 		mgmt_remote_features(sk, index, buf + MGMT_HDR_SIZE, len);
+		break;
+	case MGMT_EV_LE_CONN_PARAMS:
+		mgmt_le_conn_params(sk, index, buf + MGMT_HDR_SIZE, len);
 		break;
 	default:
 		error("Unknown Management opcode %u (index %u)", opcode, index);
