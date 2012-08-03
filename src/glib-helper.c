@@ -3,6 +3,7 @@
  *  BlueZ - Bluetooth protocol stack for Linux
  *
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
+ *  Copyright (C) 2012 Code Aurora Forum. All rights reserved
  *
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -57,13 +58,29 @@ static gboolean cached_session_expired(gpointer user_data)
 {
 	struct cached_sdp_session *cached = user_data;
 
-	cached_sdp_sessions = g_slist_remove(cached_sdp_sessions, cached);
+	if (g_slist_find(cached_sdp_sessions, cached)) {
+		cached_sdp_sessions = g_slist_remove(cached_sdp_sessions, cached);
 
-	sdp_close(cached->session);
+		sdp_close(cached->session);
 
-	g_free(cached);
+		g_free(cached);
+	}
 
 	return FALSE;
+}
+
+static void delete_cached_session(sdp_session_t *session)
+{
+	GSList *l;
+
+	for (l = cached_sdp_sessions; l != NULL; l = l->next) {
+		struct cached_sdp_session *c = l->data;
+		if (c->session == session) {
+			g_source_remove(c->timer);
+			cached_sdp_sessions = g_slist_remove(cached_sdp_sessions, c);
+			g_free(c);
+		}
+	}
 }
 
 static sdp_session_t *get_sdp_session(const bdaddr_t *src, const bdaddr_t *dst)
@@ -124,12 +141,14 @@ static GSList *context_list = NULL;
 
 static void search_context_cleanup(struct search_context *ctxt)
 {
-	context_list = g_slist_remove(context_list, ctxt);
+	if (g_slist_find(context_list, ctxt)) {
+		context_list = g_slist_remove(context_list, ctxt);
 
-	if (ctxt->destroy)
-		ctxt->destroy(ctxt->user_data);
+		if (ctxt->destroy)
+			ctxt->destroy(ctxt->user_data);
 
-	g_free(ctxt);
+		g_free(ctxt);
+	}
 }
 
 static void search_completed_cb(uint8_t type, uint16_t status,
@@ -357,11 +376,15 @@ int bt_cancel_discovery(const bdaddr_t *src, const bdaddr_t *dst)
 	if (!ctxt->session)
 		return -ENOTCONN;
 
+	delete_cached_session(ctxt->session);
+
 	if (ctxt->io_id)
 		g_source_remove(ctxt->io_id);
+	ctxt->io_id = 0;
 
 	if (ctxt->session)
 		sdp_close(ctxt->session);
+	ctxt->session = NULL;
 
 	search_context_cleanup(ctxt);
 

@@ -113,6 +113,15 @@
 
 /* AVRCP1.3 PDU IDs */
 #define PDU_GET_CAPABILITY_ID		0x10
+
+/*Player application settings PDU IDs*/
+#define PDU_LIST_APP_SETTING_ATTRIBUTES_ID		0x11
+#define PDU_LIST_APP_SETTING_VALUES_ID		0x12
+#define PDU_GET_CURRENT_APP_SETTING_VALUES_ID		0x13
+#define PDU_SET_APP_SETTING_VALUES_ID		0x14
+#define PDU_GET_APP_SETTING_ATTRIBUTE_TEXT_ID		0x15
+#define PDU_GET_APP_SETTING_VALUE_TEXT_ID		0x16
+
 #define PDU_GET_ELEMENT_ATTRIBUTES	0x20
 #define PDU_RGR_NOTIFICATION_ID		0X31
 #define PDU_REQ_CONTINUE_RSP_ID		0X40
@@ -126,6 +135,8 @@
 /* AVRCP1.3 Supported Events */
 #define EVENT_PLAYBACK_STATUS_CHANGED	0x1
 #define EVENT_TRACK_CHANGED		0x2
+#define EVENT_PLAYBACK_POS_CHANGED		0x5
+#define EVENT_PLAYER_APPLICATION_SETTING_CHANGED		0x8
 #define EVENT_AVAILABLE_PLAYERS_CHANGED	0xa
 #define EVENT_ADDRESSED_PLAYER_CHANGED	0xb
 
@@ -169,7 +180,11 @@
 #define STATUS_REV_SEEK	0X04
 #define STATUS_ERROR	0XFF
 
-
+/* AVRCP1.3 Player Standerd Attributes */
+#define ATTRIB_EQUALIZER 0x01
+#define ATTRIB_REPEATMODE 0x02
+#define ATTRIB_SHUFFLEMODE 0x03
+#define ATTRIB_SCANMODE 0x04
 
 static DBusConnection *connection = NULL;
 static gchar *input_device_name = NULL;
@@ -266,15 +281,20 @@ struct meta_data {
 	int remaining_mdata_len;
 	uint8_t trans_id_event_track;
 	uint8_t trans_id_event_playback;
+	uint8_t trans_id_event_playback_pos;
 	uint8_t trans_id_event_addressed_player;
 	uint8_t trans_id_event_available_palyer;
 	uint8_t trans_id_get_play_status;
 	gboolean reg_track_changed;
 	gboolean reg_playback_status;
+	gboolean reg_playback_pos;
 	gboolean reg_addressed_player;
 	gboolean reg_available_palyer;
 	gboolean req_get_play_status;
+	gboolean req_get_play_pos;
 	uint8_t current_play_status;
+	uint32_t current_position;
+	guint playstatus_timer;
 };
 
 struct meta_data_field {
@@ -285,6 +305,18 @@ struct meta_data_field {
 };
 #define METADATA_FIELD_LEN 8
 
+struct player_settings {
+	uint32_t pending_get;
+	uint8_t pending_transaction_id;
+	uint8_t pending_notification_id;
+	gboolean is_attr;
+	gboolean reg_playersettings_status;
+	int supported_attribs;
+	uint8_t local_eq_value;
+	uint8_t local_repeat_value;
+	uint8_t local_shuffle_value;
+	uint8_t local_scan_value;
+};
 struct control {
 	struct audio_device *dev;
 
@@ -302,7 +334,10 @@ struct control {
 	uint8_t key_quirks[256];
 
 	gboolean ignore_pause;
+
 	struct meta_data *mdata;
+
+	struct player_settings *ply_settings;
 };
 
 static struct {
@@ -332,6 +367,10 @@ static int send_notification(struct control *control,
 		uint16_t event_id, uint16_t event_data);
 static int send_play_status(struct control *control, uint32_t song_len,
                         uint32_t song_position, uint8_t play_status);
+
+static int send_playback_pos_notification(struct control *control);
+
+static gboolean send_playback_pos_request(gpointer userdata);
 
 static sdp_record_t *avrcp_ct_record(void)
 {
@@ -661,6 +700,8 @@ static gboolean control_cb(GIOChannel *chan, GIOCondition cond,
 	struct avrcp_params *params;
 	int ret, packet_size, operand_count, sock;
 	struct meta_data *mdata = control->mdata;
+	struct player_settings *ply_settings = control->ply_settings;
+	uint8_t param_len; // the network to host converted value
 
 	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
 		goto failed;
@@ -760,11 +801,13 @@ static gboolean control_cb(GIOChannel *chan, GIOCondition cond,
 				packet_size = packet_size + 4;
 			} else if (params->capability_id == CAP_EVENTS_SUPPORTED_ID) {
 				avrcp->code = CTYPE_STABLE;
-				params->param_len = htons(4);
-				operands[0] = 0x2; // Capability Count
+				params->param_len = htons(6);
+				operands[0] = 0x4; // Capability Count
 				operands[1] = EVENT_PLAYBACK_STATUS_CHANGED;
 				operands[2] = EVENT_TRACK_CHANGED;
-				packet_size = packet_size + 3;
+				operands[3] = EVENT_PLAYBACK_POS_CHANGED;
+				operands[4] = EVENT_PLAYER_APPLICATION_SETTING_CHANGED;
+				packet_size = packet_size + 5;
 			} else {
 				avctp->cr = AVCTP_RESPONSE;
 				avrcp->code = CTYPE_REJECTED;
@@ -850,11 +893,76 @@ static gboolean control_cb(GIOChannel *chan, GIOCondition cond,
 				operands += AVRCP_PKT_PARAMS_LEN;
 				*operands = mdata->current_play_status;
 				packet_size -= 3;
+			} else if (params->capability_id == EVENT_PLAYBACK_POS_CHANGED) {
+				uint32_t *wordoperand;
+				uint32_t timeout;
+				mdata->trans_id_event_playback_pos = avctp->transaction;
+				mdata->reg_playback_pos = TRUE;
+				avrcp->code = CTYPE_INTERIM;
+				params->param_len = htons(0x5);
+				operands = (unsigned char *)params;
+				operands += AVRCP_PKT_PARAMS_LEN;
+				wordoperand = (uint32_t *)operands;
+				timeout = ntohl(*wordoperand);
+				DBG("playback position req for %d", timeout);
+				//add validation for time peroid
+				if (timeout > 0) {
+					mdata->playstatus_timer =
+							g_timeout_add_seconds(timeout,
+								send_playback_pos_request,
+								control);
+
+					if (mdata->current_play_status == STATUS_STOPPED)
+						*wordoperand = htonl(0xffffffff);
+					else
+						*wordoperand = htonl(mdata->current_position);
+				} else {
+					DBG("invalid timer so not registering for change");
+					avctp->cr = AVCTP_RESPONSE;
+					avrcp->code = CTYPE_REJECTED;
+					param_len = ntohs(params->param_len);
+					packet_size -= param_len;
+					params->param_len = htons(0x1);
+					params->capability_id = ERROR_INVALID_PARAMETER;
+					packet_size += 1;
+				}
+			} else if (params->capability_id ==
+							EVENT_PLAYER_APPLICATION_SETTING_CHANGED) {
+				ply_settings->pending_notification_id = avctp->transaction;
+				ply_settings->reg_playersettings_status = TRUE;
+				avrcp->code = CTYPE_INTERIM;
+				operands = (unsigned char *)params;
+				operands += AVRCP_PKT_PARAMS_LEN;
+				packet_size -= 4;
+				*operands = ply_settings->supported_attribs;
+				operands++; packet_size++;
+				// if more attributes supported their local values to be
+				// populated below.
+				*operands = ATTRIB_REPEATMODE;
+				operands++; packet_size++;
+				*operands = ply_settings->local_repeat_value;
+				operands++; packet_size++;
+				*operands = ATTRIB_SHUFFLEMODE;
+				operands++; packet_size++;
+				*operands = ply_settings->local_shuffle_value;
+				packet_size++;
+				// 1 for event id, 1 for number attribs, 4 for values.
+				params->param_len = htons(0x6);
+			} else if (params->capability_id <
+					EVENT_PLAYER_APPLICATION_SETTING_CHANGED) {
+				avctp->cr = AVCTP_RESPONSE;
+				avrcp->code = CTYPE_NOT_IMPLEMENTED;
+				param_len = ntohs(params->param_len);
+				packet_size -= param_len;
+				params->param_len = htons(0x0);
 			} else {
 				avctp->cr = AVCTP_RESPONSE;
 				avrcp->code = CTYPE_REJECTED;
+				param_len = ntohs(params->param_len);
+				packet_size -= param_len;
 				params->param_len = htons(0x1);
 				params->capability_id = ERROR_INVALID_PARAMETER;
+				packet_size += 1;
 			}
 		} else if (params->pdu_id == PDU_GET_PLAY_STATUS_ID) {
 			g_dbus_emit_signal(control->dev->conn, control->dev->path,
@@ -862,6 +970,170 @@ static gboolean control_cb(GIOChannel *chan, GIOCondition cond,
 					DBUS_TYPE_INVALID);
 			mdata->trans_id_get_play_status = avctp->transaction;
 			mdata->req_get_play_status = TRUE;
+			return TRUE;
+		} else if (params->pdu_id == PDU_LIST_APP_SETTING_ATTRIBUTES_ID) {
+			g_dbus_emit_signal(control->dev->conn, control->dev->path,
+					AUDIO_CONTROL_INTERFACE, "ListPlayerAttributes",
+					DBUS_TYPE_INVALID);
+			ply_settings->pending_get = PDU_LIST_APP_SETTING_ATTRIBUTES_ID;
+			ply_settings->pending_transaction_id = avctp->transaction;
+			return TRUE;
+		} else if (params->pdu_id == PDU_LIST_APP_SETTING_VALUES_ID) {
+			g_dbus_emit_signal(control->dev->conn, control->dev->path,
+					AUDIO_CONTROL_INTERFACE, "ListAttributeValues",
+					DBUS_TYPE_BYTE, &params->capability_id,
+					DBUS_TYPE_INVALID);
+			ply_settings->pending_get = PDU_LIST_APP_SETTING_VALUES_ID;
+			ply_settings->pending_transaction_id = avctp->transaction;
+			return TRUE;
+		} else if (params->pdu_id == PDU_GET_CURRENT_APP_SETTING_VALUES_ID) {
+			uint8_t attribCount = params->capability_id;
+			uint8_t *attribArray = g_new0(uint8_t, params->capability_id);
+			uint8_t *op = (uint8_t *)params, i;
+
+			DBG("attribute count is %d",attribCount);
+			op += AVRCP_PKT_PARAMS_LEN;
+
+			for (i = 0; i < attribCount; i++) {
+				attribArray[i] = op[i];
+				DBG("attribute is %d",attribArray[i]);
+			}
+			g_dbus_emit_signal(control->dev->conn, control->dev->path,
+					AUDIO_CONTROL_INTERFACE, "GetAttributeValues",
+					DBUS_TYPE_ARRAY, DBUS_TYPE_BYTE, &attribArray, attribCount,
+					DBUS_TYPE_INVALID);
+			g_free(attribArray);
+			ply_settings->pending_get = PDU_GET_CURRENT_APP_SETTING_VALUES_ID;
+			ply_settings->pending_transaction_id = avctp->transaction;
+			return TRUE;
+		} else if (params->pdu_id == PDU_SET_APP_SETTING_VALUES_ID) {
+			uint8_t attribCount = params->capability_id;
+			uint8_t arraySize = attribCount*2;
+			uint8_t *attribValueArray = g_new0(uint8_t, arraySize);
+			uint8_t *op = (uint8_t *)params, i;
+			gboolean is_valid = TRUE;
+			gboolean is_supported = FALSE;
+			DBG("attribute count is %d",attribCount);
+			op += AVRCP_PKT_PARAMS_LEN;
+
+			for (i = 0; i < arraySize; i++) {
+				attribValueArray[i] = op[i];
+				DBG("attribute/value is %d",attribValueArray[i]);
+				if ((attribValueArray[i] >= 0x05  &&
+					attribValueArray[i] <= 0x7f) ||
+					(attribValueArray[i] > 0x7f && (i%2 != 0))) {
+					is_valid = FALSE;
+					break;
+				} // when more params supported update below
+				if ((i%2 == 0) &&
+					((attribValueArray[i] == ATTRIB_REPEATMODE) ||
+					(attribValueArray[i] == ATTRIB_SHUFFLEMODE)))
+					is_supported = TRUE;
+			}
+			if ((is_valid == FALSE) || (is_supported == FALSE)) {
+				avctp->cr = AVCTP_RESPONSE;
+				avrcp->code = CTYPE_REJECTED;
+				param_len = ntohs(params->param_len);
+				packet_size -= param_len;
+				params->param_len = htons(0x1);
+				params->capability_id = ERROR_INVALID_PARAMETER;
+				packet_size += 1;
+				ret = write(sock, buf, packet_size);
+				g_free(attribValueArray);
+				return TRUE;
+			}
+			g_dbus_emit_signal(control->dev->conn, control->dev->path,
+					AUDIO_CONTROL_INTERFACE, "SetAttributeValues",
+					DBUS_TYPE_ARRAY, DBUS_TYPE_BYTE,
+					&attribValueArray, arraySize,
+					DBUS_TYPE_INVALID);
+			g_free(attribValueArray);
+			ply_settings->pending_get = 0; // no return for set command
+			ply_settings->pending_transaction_id = 0;
+			params->param_len = htons(0x0);
+			avctp->cr = AVCTP_RESPONSE;
+			avrcp->code = CTYPE_ACCEPTED;
+			packet_size -= 3;
+		} else if (params->pdu_id == PDU_GET_APP_SETTING_ATTRIBUTE_TEXT_ID) {
+			uint8_t attribCount = params->capability_id;
+			uint8_t *attribArray = g_new0(uint8_t, params->capability_id);
+			uint8_t *op = (uint8_t *)params, i;
+			gboolean is_valid = TRUE;
+
+			DBG("attribute count is %d",attribCount);
+			op += AVRCP_PKT_PARAMS_LEN;
+
+			for (i = 0; i < attribCount; i++) {
+				attribArray[i] = op[i];
+				DBG("attribute is %d",attribArray[i]);
+				if ((attribArray[i] >= 0x05  &&
+					attribArray[i] <= 0x7f)) {
+					is_valid = FALSE;
+					break;
+				}
+			}
+			if (is_valid == FALSE) {
+				avctp->cr = AVCTP_RESPONSE;
+				avrcp->code = CTYPE_REJECTED;
+				param_len = ntohs(params->param_len);
+				packet_size -= param_len;
+				params->param_len = htons(0x1);
+				params->capability_id = ERROR_INVALID_PARAMETER;
+				packet_size += 1;
+				ret = write(sock, buf, packet_size);
+				g_free(attribArray);
+				return TRUE;
+			}
+			g_dbus_emit_signal(control->dev->conn, control->dev->path,
+					AUDIO_CONTROL_INTERFACE, "ListPlayerAttributesText",
+					DBUS_TYPE_ARRAY, DBUS_TYPE_BYTE, &attribArray, attribCount,
+					DBUS_TYPE_INVALID);
+			g_free(attribArray);
+			ply_settings->pending_get = PDU_GET_APP_SETTING_ATTRIBUTE_TEXT_ID;
+			ply_settings->pending_transaction_id = avctp->transaction;
+			ply_settings->is_attr = TRUE;
+			return TRUE;
+		} else if (params->pdu_id == PDU_GET_APP_SETTING_VALUE_TEXT_ID) {
+			uint8_t attribValue = params->capability_id;
+			uint8_t *op = (uint8_t *)params+AVRCP_PKT_PARAMS_LEN;
+			uint8_t valueCount = *op;
+			uint8_t *valueArray = g_new0(uint8_t, valueCount);
+			int i;
+			gboolean is_valid = TRUE;
+
+			DBG("attribute value is %d while count is %d",attribValue, valueCount);
+
+			op++;
+			for (i = 0; i < valueCount; i++) {
+				valueArray[i] = op[i];
+				DBG("value is %d",valueArray[i]);
+				if ((valueArray[i] >= 0x05  &&
+					valueArray[i] <= 0x7f)) {
+					is_valid = FALSE;
+					break;
+				}
+			}
+			if (is_valid == FALSE) {
+				avctp->cr = AVCTP_RESPONSE;
+				avrcp->code = CTYPE_REJECTED;
+				param_len = ntohs(params->param_len);
+				packet_size -= param_len;
+				params->param_len = htons(0x1);
+				params->capability_id = ERROR_INVALID_PARAMETER;
+				packet_size += 1;
+				ret = write(sock, buf, packet_size);
+				g_free(valueArray);
+				return TRUE;
+			}
+			g_dbus_emit_signal(control->dev->conn, control->dev->path,
+					AUDIO_CONTROL_INTERFACE, "ListAttributeValuesText",
+					DBUS_TYPE_BYTE, &attribValue,
+					DBUS_TYPE_ARRAY, DBUS_TYPE_BYTE, &valueArray, valueCount,
+					DBUS_TYPE_INVALID);
+			g_free(valueArray);
+			ply_settings->pending_get = PDU_GET_APP_SETTING_VALUE_TEXT_ID;
+			ply_settings->pending_transaction_id = avctp->transaction;
+			ply_settings->is_attr = FALSE;
 			return TRUE;
 		} else {
 				avctp->cr = AVCTP_RESPONSE;
@@ -1439,13 +1711,19 @@ static DBusMessage *update_play_status(DBusConnection *conn, DBusMessage *msg,
 
 	DBG("PlayStatus data is %d %d %d", duration, position, play_status);
 	mdata->current_play_status = (uint8_t)play_status;
+	mdata->current_position = (uint32_t)position;
 
 	if (control->state != AVCTP_STATE_CONNECTED)
 		return g_dbus_create_error(msg,
 			ERROR_INTERFACE ".NotConnected",
 				"Device not Connected");
 
-	send_play_status(control, duration, position, play_status);
+	if (mdata->req_get_play_status == TRUE)
+		send_play_status(control, duration, position, play_status);
+
+	if ((mdata->req_get_play_pos == TRUE) &&
+		(play_status == STATUS_PLAYING))
+			send_playback_pos_notification(control);
 
 	return dbus_message_new_method_return(msg);
 }
@@ -1522,6 +1800,532 @@ static DBusMessage *update_metadata(DBusConnection *conn, DBusMessage *msg,
 	return dbus_message_new_method_return(msg);
 }
 
+static void fill_header (struct control *control, unsigned char **pBuf, int pdu_id) {
+	unsigned char *buf = *pBuf;
+	struct avctp_header *avctp = (void *) buf;
+	struct avrcp_header *avrcp = (void *) &buf[AVCTP_HEADER_LENGTH];
+	struct avrcp_params *params =
+		(struct avrcp_params *)
+				(&buf[AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH]);
+	uint8_t *op = &buf[AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH];
+	struct player_settings *ply_settings = control->ply_settings;
+
+	memset(buf, 0, sizeof(buf));
+
+	avctp->packet_type = AVCTP_PACKET_SINGLE;
+	avctp->cr = AVCTP_RESPONSE;
+	avctp->pid = htons(AV_REMOTE_SVCLASS_ID);
+
+	if (pdu_id == PDU_RGR_NOTIFICATION_ID) {
+		avctp->transaction = ply_settings->pending_notification_id;
+		avrcp->code = CTYPE_CHANGED;
+	}
+	else {
+		ply_settings->pending_get = 0;
+		avctp->transaction = ply_settings->pending_transaction_id;
+		avrcp->code = CTYPE_STABLE;
+	}
+	avrcp->subunit_type = SUBUNIT_PANEL;
+	avrcp->opcode = OP_VENDORDEPENDENT;
+
+	//BT SIG Company id is 0x1958
+	op[0] = 0x00;
+	op[1] = 0x19;
+	op[2] = 0x58;
+
+	params->pdu_id = pdu_id;
+	params->packet_type = AVCTP_PACKET_SINGLE;
+}
+
+static int send_supported_attributes( struct control *control, uint8_t *attribute_ids, uint8_t len)
+{
+	int header_len = AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH + AVRCP_PKT_PARAMS_LEN;
+	unsigned char *buf = g_new0(unsigned char, header_len + len +1);
+	struct avrcp_params *params =
+			(struct avrcp_params *)
+				(&buf[AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH]);
+	int total_len =0, sk = g_io_channel_unix_get_fd(control->io);
+	struct player_settings *ply_settings = control->ply_settings;
+	uint8_t *op ;
+	int ret = 0, i;
+
+	DBG("send_attributes_supported called");
+	if (ply_settings->pending_get != PDU_LIST_APP_SETTING_ATTRIBUTES_ID)
+		goto cleanup;
+
+	fill_header(control, &buf, PDU_LIST_APP_SETTING_ATTRIBUTES_ID);
+
+	params->param_len = htons(len+1);
+	op = (uint8_t *)params;
+
+	op += AVRCP_PKT_PARAMS_LEN;
+	op -= 1;
+	*op = len;
+	op++;
+	for(i = 0; i < len; i++) {
+		op[i] = attribute_ids[i];
+	}
+	total_len = header_len + len ;
+	ret = write(sk, buf, total_len);
+
+cleanup:
+	g_free(buf);
+	return ret;
+}
+
+static void fill_error_header( struct control *control, unsigned char **pBuf, uint8_t pdu_id) {
+	unsigned char *buf = *pBuf;
+	struct avctp_header *avctp = (void *) buf;
+	struct avrcp_header *avrcp = (void *) &buf[AVCTP_HEADER_LENGTH];
+	struct avrcp_params *params =
+			(struct avrcp_params *)
+				(&buf[AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH]);
+	struct player_settings *ply_settings = control->ply_settings;
+	uint8_t *op = &buf[AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH];
+
+	avctp->packet_type = AVCTP_PACKET_SINGLE;
+	avctp->cr = AVCTP_RESPONSE;
+	avctp->pid = htons(AV_REMOTE_SVCLASS_ID);
+	avctp->transaction = ply_settings->pending_transaction_id;
+	ply_settings->pending_get = 0;
+	avrcp->code = CTYPE_REJECTED;
+	avrcp->subunit_type = SUBUNIT_PANEL;
+	avrcp->opcode = OP_VENDORDEPENDENT;
+
+	//BT SIG Company id is 0x1958
+	op[0] = 0x00;
+	op[1] = 0x19;
+	op[2] = 0x58;
+
+	params->pdu_id = pdu_id;
+	params->param_len = htons(0x1);
+	params->capability_id = ERROR_INVALID_PARAMETER;
+}
+
+static int send_supported_values( struct control *control, uint8_t *value_ids, uint8_t len)
+{
+	int header_len = AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH + AVRCP_PKT_PARAMS_LEN;
+	unsigned char *buf = g_new0(unsigned char, header_len + len +1);
+	struct avrcp_params *params =
+			(struct avrcp_params *)
+				(&buf[AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH]);
+	int total_len =0, sk = g_io_channel_unix_get_fd(control->io);
+	struct player_settings *ply_settings = control->ply_settings;
+	uint8_t *op ;
+	int ret = 0, i;
+
+	DBG("send_values_values called");
+	if (ply_settings->pending_get != PDU_LIST_APP_SETTING_VALUES_ID)
+		goto cleanup;
+
+	if( len <= 1) {
+		fill_error_header( control, &buf, PDU_LIST_APP_SETTING_VALUES_ID);
+		ret = write(sk,buf, header_len);
+		goto cleanup;
+	}
+	fill_header(control, &buf, PDU_LIST_APP_SETTING_VALUES_ID);
+
+	params->param_len = htons(len+1);
+	op = (uint8_t *)params;
+
+	op += AVRCP_PKT_PARAMS_LEN;
+	op -= 1;
+	*op = len;
+	op++;
+	for(i = 0; i < len; i++) {
+		op[i] = value_ids[i];
+	}
+	total_len = header_len + len ;
+	ret = write(sk, buf, total_len);
+
+cleanup:
+	g_free(buf);
+	return ret;
+}
+
+static int get_valid_values(struct control *control, uint8_t *value_ids, uint8_t len)
+{
+	int valid_items = 0, i;
+	struct player_settings *ply_settings = control->ply_settings;
+
+	for (i = 0; i < len/2; i++) {
+		switch (value_ids[2*i]) {
+			case ATTRIB_EQUALIZER:
+				if (value_ids[2*i+1] != 0x00) {
+					ply_settings->local_eq_value = value_ids[2*i+1];
+					valid_items++;
+				}
+			break;
+			case ATTRIB_REPEATMODE:
+				if (value_ids[2*i+1] != 0x00) {
+					ply_settings->local_repeat_value = value_ids[2*i+1];
+					valid_items++;
+				}
+			break;
+			case ATTRIB_SHUFFLEMODE:
+				if (value_ids[2*i+1] != 0x00) {
+					ply_settings->local_shuffle_value = value_ids[2*i+1];
+					valid_items++;
+				}
+			break;
+			case ATTRIB_SCANMODE:
+				if (value_ids[2*i+1] != 0x00) {
+					ply_settings->local_scan_value = value_ids[2*i+1];
+					valid_items++;
+				}
+			break;
+		}
+	}
+
+	return valid_items;
+}
+
+static int send_attribute_values( struct control *control, uint8_t *value_ids, uint8_t len)
+{
+	int header_len = AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH + AVRCP_PKT_PARAMS_LEN;
+	unsigned char *buf = g_new0(unsigned char, header_len + len +1);
+	struct avrcp_params *params =
+			(struct avrcp_params *)
+				(&buf[AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH]);
+	int total_len = 0, sk = g_io_channel_unix_get_fd(control->io);
+	struct player_settings *ply_settings = control->ply_settings;
+	uint8_t *op ;
+	int ret = 0, i;
+
+	DBG("send_attributes_values called");
+	get_valid_values(control, value_ids, len);
+
+	if (ply_settings->pending_get == PDU_GET_CURRENT_APP_SETTING_VALUES_ID) {
+		DBG("get cmd");
+		if (0 == get_valid_values(control, value_ids, len)) {
+			fill_error_header( control, &buf, PDU_GET_CURRENT_APP_SETTING_VALUES_ID);
+			ret = write(sk,buf, header_len);
+			goto cleanup;
+		}
+		fill_header(control, &buf, PDU_GET_CURRENT_APP_SETTING_VALUES_ID);
+		params->param_len = htons(len+1);
+		op = (uint8_t *)params;
+
+		op += AVRCP_PKT_PARAMS_LEN;
+		op -= 1;
+		total_len = header_len + len;
+	} else if (ply_settings->reg_playersettings_status == TRUE) {
+		DBG("notification cmd");
+		ply_settings->reg_playersettings_status = FALSE;
+		if (0 == get_valid_values(control, value_ids, len))
+			goto cleanup;
+		fill_header(control, &buf, PDU_RGR_NOTIFICATION_ID);
+		params->param_len = htons(len+2);
+		op = (uint8_t *)params;
+
+		op += AVRCP_PKT_PARAMS_LEN;
+		op -= 1;
+		*op = EVENT_PLAYER_APPLICATION_SETTING_CHANGED;
+		op++;
+		total_len = header_len + len + 1;
+	} else {
+		DBG("no mapping request");
+		goto cleanup;
+	}
+
+	*op = len/2;
+	op++;
+	for(i = 0; i < len; i++) {
+		op[i] = value_ids[i];
+	}
+	DBG("total len is %d", total_len);
+	ret = write(sk, buf, total_len);
+
+cleanup:
+	g_free(buf);
+	return ret;
+}
+
+static int getAttrStrLen(char *attr_str) {
+	uint8_t *str = (uint8_t *)attr_str;
+	int len = 0;
+	while(str[len] != 0x00)
+		len++;
+	return len;
+}
+
+static int get_params_length(char **attr_strs, int len) {
+	int total_len = 0, i;
+	total_len += 1; //LENGTH_FOR_NUMBER_OF_PARAMS is 1byte
+	total_len += 4*len; // 1 byte for attid, 2 bytes for charset, 1byte for len
+	for (i = 0; i < len; i++)
+		total_len += getAttrStrLen(attr_strs[i]);
+	DBG("total len is %d",total_len);
+	return total_len;
+}
+
+static int get_valid_value_text(char **attr_strs, int len) {
+	int valid_items = 0, i;
+	for (i = 0; i < len; i++)
+		if (0 != getAttrStrLen(attr_strs[i]))
+			valid_items ++;
+	return valid_items;
+}
+
+static int send_attr_value_text( struct control *control,
+				uint8_t *attr, char **attr_str, uint8_t len)
+{
+	int header_len = AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH + AVRCP_PKT_PARAMS_LEN;
+	unsigned char *buf;
+	struct avrcp_params *params;
+	int total_len = 0, sk = g_io_channel_unix_get_fd(control->io);
+	struct player_settings *ply_settings = control->ply_settings;
+	uint8_t *op ;
+	uint16_t *charset;
+	int ret = 0, i, str_len, total_params_len;
+	uint8_t pdu_id;
+
+	DBG("send_attributes_text called");
+	pdu_id = (ply_settings->is_attr == TRUE) ? PDU_GET_APP_SETTING_ATTRIBUTE_TEXT_ID :
+			PDU_GET_APP_SETTING_VALUE_TEXT_ID;
+	if (ply_settings->pending_get != pdu_id) {
+		DBG("invalid pdu id");
+		goto cleanup;
+	}
+
+	if (0 == get_valid_value_text(attr_str, len)) {
+	    buf = g_new0(unsigned char, header_len+1);
+		fill_error_header( control, &buf, pdu_id);
+		ret = write(sk,buf, header_len);
+		goto cleanup;
+	}
+
+	total_params_len = get_params_length (attr_str, len);
+	buf = g_new0(unsigned char, header_len + total_params_len +1);
+	params = (struct avrcp_params *)(&buf[AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH]);
+	fill_header(control, &buf, pdu_id);
+
+	params->param_len = htons(total_params_len);
+	op = (uint8_t *)params;
+
+	op += AVRCP_PKT_PARAMS_LEN;
+	op -= 1;
+	*op = len;
+	op++;
+	for(i = 0; i < len; i++) {
+		*op = attr[i]; op++;
+		charset = (uint16_t *)op;
+		*charset = htons(CHARACTER_SET_UTF8);
+		op += 2;
+		str_len = getAttrStrLen(attr_str[i]);
+		DBG("attr_str is %s",attr_str[i]);
+		*op = str_len;
+		op++;
+		memcpy(op, attr_str[i], str_len);
+		op += str_len;
+	}
+	total_len = header_len + total_params_len -1;
+	DBG("write being called with len %d",total_len);
+	ret = write(sk, buf, total_len);
+	DBG("ret value for write is %d",ret);
+
+cleanup:
+	g_free(buf);
+	return ret;
+}
+
+static gboolean send_playback_pos_request(gpointer userdata) {
+	struct control *control = userdata;
+	struct meta_data *mdata = control->mdata;
+
+	if (mdata->playstatus_timer) {
+		g_source_remove(mdata->playstatus_timer);
+		mdata->playstatus_timer = 0;
+	}
+
+	g_dbus_emit_signal(control->dev->conn, control->dev->path,
+						AUDIO_CONTROL_INTERFACE, "GetPlayStatus",
+						DBUS_TYPE_INVALID);
+	mdata->req_get_play_pos = TRUE;
+	return FALSE; // one time timer is this.
+}
+
+static int send_playback_pos_notification(struct control *control) {
+	int header_len = AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH + AVRCP_PKT_PARAMS_LEN;
+	unsigned char buf[header_len + 4];
+	struct avctp_header *avctp = (void *) buf;
+	struct avrcp_header *avrcp = (void *) &buf[AVCTP_HEADER_LENGTH];
+	struct avrcp_params *params =
+			(struct avrcp_params *)
+				(&buf[AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH]);
+	int total_len = 0, sk = g_io_channel_unix_get_fd(control->io);
+	struct meta_data *mdata = control->mdata;
+	uint8_t *op = &buf[AVCTP_HEADER_LENGTH + AVRCP_HEADER_LENGTH];
+	int ret = 0, i;
+	uint32_t *word_op;
+
+	DBG("send playback position %d", total_len);
+	mdata->reg_playback_pos = FALSE;
+	mdata->req_get_play_pos = FALSE;
+
+	if (mdata->playstatus_timer) {
+		g_source_remove(mdata->playstatus_timer);
+		mdata->playstatus_timer = 0;
+	}
+
+	memset(buf, 0, sizeof(buf));
+
+	avctp->packet_type = AVCTP_PACKET_SINGLE;
+	avctp->cr = AVCTP_RESPONSE;
+	avctp->pid = htons(AV_REMOTE_SVCLASS_ID);
+	avctp->transaction = mdata->trans_id_event_playback_pos;
+	avrcp->code = CTYPE_CHANGED;
+	avrcp->subunit_type = SUBUNIT_PANEL;
+	avrcp->opcode = OP_VENDORDEPENDENT;
+
+	//BT SIG Company id is 0x1958
+	op[0] = 0x00;
+	op[1] = 0x19;
+	op[2] = 0x58;
+
+	params->pdu_id = PDU_RGR_NOTIFICATION_ID;
+	params->packet_type = AVCTP_PACKET_SINGLE;
+	params->param_len = htons(0x5);
+	op = (uint8_t *)params;
+
+	op += AVRCP_PKT_PARAMS_LEN;
+	op -= 1;
+	*op = EVENT_PLAYBACK_POS_CHANGED;
+	op++;
+	word_op = (uint32_t *)op;
+	if (mdata->current_play_status == STATUS_STOPPED)
+		*word_op = htonl(0xffffffff);
+	else
+		*word_op = htonl(mdata->current_position);
+	total_len = header_len + 4;
+	DBG("total len is %d", total_len);
+	ret = write(sk, buf, total_len);
+	return ret;
+}
+
+static DBusMessage *update_supported_attributes(DBusConnection *conn, DBusMessage *msg,
+								void *data)
+{
+	struct audio_device *device = data;
+	struct control *control = device->control;
+	DBusMessage *reply;
+	uint8_t *attribute_ids, len;
+	int err;
+	DBG("update_supported_attributes called");
+
+	if (dbus_message_get_args(msg, NULL, DBUS_TYPE_ARRAY, DBUS_TYPE_BYTE,
+						&attribute_ids, &len,
+						DBUS_TYPE_INVALID) == FALSE) {
+		return g_dbus_create_error(msg, ERROR_INTERFACE ".InvalidArguments",
+			"Invalid arguments in method call");
+	}
+
+	DBG("Number of attributes supported is %d", len);
+
+	if (control->state != AVCTP_STATE_CONNECTED)
+		return g_dbus_create_error(msg,
+			ERROR_INTERFACE ".NotConnected",
+				"Device not Connected");
+
+	send_supported_attributes(control, attribute_ids, len);
+
+	return dbus_message_new_method_return(msg);
+}
+
+static DBusMessage *update_attribute_values(DBusConnection *conn, DBusMessage *msg,
+								void *data)
+{
+	struct audio_device *device = data;
+	struct control *control = device->control;
+	DBusMessage *reply;
+	uint8_t *value_ids, len, attrib;
+	int err;
+	DBG("update_attribute_values called");
+
+	if (dbus_message_get_args(msg, NULL,
+						DBUS_TYPE_ARRAY, DBUS_TYPE_BYTE,
+						&value_ids, &len,
+						DBUS_TYPE_INVALID) == FALSE) {
+		return g_dbus_create_error(msg, ERROR_INTERFACE ".InvalidArguments",
+			"Invalid arguments in method call");
+	}
+
+	DBG("Number of values supported is %d", len);
+
+	if (control->state != AVCTP_STATE_CONNECTED)
+		return g_dbus_create_error(msg,
+			ERROR_INTERFACE ".NotConnected",
+				"Device not Connected");
+
+	send_supported_values(control, value_ids, len);
+
+	return dbus_message_new_method_return(msg);
+}
+
+static DBusMessage *update_current_values(DBusConnection *conn, DBusMessage *msg,
+								void *data)
+{
+	struct audio_device *device = data;
+	struct control *control = device->control;
+	DBusMessage *reply;
+	uint8_t *value_ids, len;
+	int err;
+	DBG("update_current_values called");
+
+	if (dbus_message_get_args(msg, NULL,
+						DBUS_TYPE_ARRAY, DBUS_TYPE_BYTE,
+						&value_ids, &len,
+						DBUS_TYPE_INVALID) == FALSE) {
+		return g_dbus_create_error(msg, ERROR_INTERFACE ".InvalidArguments",
+			"Invalid arguments in method call");
+	}
+
+	DBG("Number of values supported is %d", len);
+
+	if (control->state != AVCTP_STATE_CONNECTED)
+		return g_dbus_create_error(msg,
+			ERROR_INTERFACE ".NotConnected",
+				"Device not Connected");
+
+	send_attribute_values(control, value_ids, len);
+
+	return dbus_message_new_method_return(msg);
+}
+
+static DBusMessage *update_attrib_values_text(DBusConnection *conn, DBusMessage *msg,
+								void *data)
+{
+	struct audio_device *device = data;
+	struct control *control = device->control;
+	DBusMessage *reply;
+	char **attr_strs;
+	int	len, len_str;
+	uint8_t *attr_ids;
+	int err;
+	DBG("update_attribute_values_text called");
+
+	if (dbus_message_get_args(msg, NULL,
+						DBUS_TYPE_ARRAY, DBUS_TYPE_BYTE,
+						&attr_ids, &len,
+						DBUS_TYPE_ARRAY, DBUS_TYPE_STRING,
+						&attr_strs, &len_str,
+						DBUS_TYPE_INVALID) == FALSE) {
+		return g_dbus_create_error(msg, ERROR_INTERFACE ".InvalidArguments",
+			"Invalid arguments in method call");
+	}
+
+	DBG("Number of values supported is %d", len);
+
+	if (control->state != AVCTP_STATE_CONNECTED)
+		return g_dbus_create_error(msg,
+			ERROR_INTERFACE ".NotConnected",
+				"Device not Connected");
+
+	send_attr_value_text(control, attr_ids, attr_strs, len);
+
+	return dbus_message_new_method_return(msg);
+}
+
 static DBusMessage *control_get_properties(DBusConnection *conn,
 					DBusMessage *msg, void *data)
 {
@@ -1560,6 +2364,11 @@ static GDBusMethodTable control_methods[] = {
 	{ "UpdateMetaData",	"sssssss",	"",	update_metadata },
 	{ "UpdatePlayStatus",	"uuu",	"",	update_play_status },
 	{ "UpdateNotification",	"qt",	"",	update_notification },
+	{ "UpdateSupportedAttributes",		"ay",	"", update_supported_attributes},
+	{ "UpdateSupportedValues",		"ay",	"", update_attribute_values},
+	{ "UpdateCurrentValues",		"ay",	"", update_current_values},
+	{ "UpdateAttributesText",		"ayas",	"", update_attrib_values_text},
+	{ "UpdateValuesText",		"ayas",	"", update_attrib_values_text},
 	{ NULL, NULL, NULL, NULL }
 };
 
@@ -1568,6 +2377,12 @@ static GDBusSignalTable control_signals[] = {
 	{ "Disconnected",		"",	G_DBUS_SIGNAL_FLAG_DEPRECATED},
 	{ "PropertyChanged",		"sv"	},
 	{ "GetPlayStatus",		""	},
+	{ "ListPlayerAttributes",		""	},
+	{ "ListAttributeValues",		"y"	},
+	{ "GetAttributeValues",		"ay"	},
+	{ "SetAttributeValues",		"ay"	},
+	{ "ListPlayerAttributesText",		"ay"	},
+	{ "ListAttributeValuesText",		"yay"	},
 	{ NULL, NULL }
 };
 
@@ -1605,6 +2420,10 @@ static void metadata_cleanup(struct meta_data *mdata) {
 		g_free(mdata->genre);
 		mdata->genre = NULL;
 	}
+	if (mdata->playstatus_timer) {
+		g_source_remove(mdata->playstatus_timer);
+		mdata->playstatus_timer = 0;
+	}
 
 }
 
@@ -1621,6 +2440,7 @@ static void path_unregister(void *data)
 
 	metadata_cleanup(control->mdata);
 	g_free(control->mdata);
+	g_free(control->ply_settings);
 	g_free(control);
 	dev->control = NULL;
 }
@@ -1655,6 +2475,14 @@ void control_resume(struct audio_device *dev)
 		return;
 	handle_key_op(control, PLAY_OP, 1);
 	handle_key_op(control, PLAY_OP, 0);
+}
+static void init_player_settings(struct control *control)
+{
+	struct player_settings *ply_settings = control->ply_settings;
+	memset(ply_settings, 0, sizeof(struct player_settings));
+	ply_settings->local_shuffle_value = 0x1;
+	ply_settings->local_repeat_value = 0x1;
+	ply_settings->supported_attribs = 2;
 }
 
 struct control *control_init(struct audio_device *dev, uint16_t uuid16)
@@ -1712,17 +2540,23 @@ struct control *control_init(struct audio_device *dev, uint16_t uuid16)
 	mdata->remaining_mdata_len = 0;
 	mdata->trans_id_event_track = 0;
 	mdata->trans_id_event_playback = 0;
+	mdata->trans_id_event_playback_pos = 0;
 	mdata->trans_id_event_addressed_player = 0;
 	mdata->trans_id_event_available_palyer = 0;
 	mdata->trans_id_get_play_status = 0;
 	mdata->reg_track_changed = FALSE;
 	mdata->reg_playback_status = FALSE;
+	mdata->reg_playback_pos = FALSE;
 	mdata->reg_addressed_player = FALSE;
 	mdata->reg_available_palyer = FALSE;
 	mdata->req_get_play_status = FALSE;
+	mdata->req_get_play_pos = FALSE;
 	mdata->current_play_status = STATUS_STOPPED;
+	mdata->current_position = 0xffffffff;
 
 	control->mdata = mdata;
+	control->ply_settings = g_new0(struct player_settings, 1);
+	init_player_settings(control);
 
 	return control;
 }
@@ -2034,6 +2868,9 @@ static int send_notification(struct control *control,
 	tid = (uint32_t *)op;
 	switch(event_id) {
 		case EVENT_TRACK_CHANGED:
+			if (mdata->reg_playback_pos == TRUE)
+				send_playback_pos_request(control);
+
 			if (mdata->reg_track_changed == FALSE)
 				return 0;
 			*tid = htonl(0x00);
@@ -2046,6 +2883,9 @@ static int send_notification(struct control *control,
 			break;
 		case EVENT_PLAYBACK_STATUS_CHANGED:
 			mdata->current_play_status = (uint8_t) event_data;
+			if (mdata->reg_playback_pos == TRUE)
+				send_playback_pos_request(control);
+
 			if (mdata->reg_playback_status == FALSE)
 				return 0;
 			*op = event_data;
