@@ -54,7 +54,7 @@
 
 #define NETWORK_SERVER_INTERFACE "org.bluez.NetworkServer"
 #define SETUP_TIMEOUT		1
-#define AUTH_TIMEOUT		10
+#define AUTH_TIMEOUT		2
 #define BNEP_EXT_CONTROL 0
 
 typedef struct _svc_uuid {
@@ -708,40 +708,60 @@ reject:
 	setup_destroy(na);
 }
 
+static int auth_in_progress(struct network_adapter *na, gboolean *is_auth)
+{
+	struct btd_adapter *adapter = NULL;
+	struct btd_device *dev = NULL;
+	char peer_addr[18];
+
+	DBG("");
+	if (!na)
+		return -1;
+
+	adapter = na->adapter;
+	ba2str(&na->setup->dst, peer_addr);
+	dev = adapter_find_device(adapter, peer_addr);
+	if (!dev)
+		return -1;
+
+	if (device_is_authenticating(dev))
+		*is_auth = TRUE;
+	else
+		*is_auth = FALSE;
+
+	return 0;
+}
+
 static gboolean authorization_handler(gpointer user_data)
 {
 	struct network_adapter *na = user_data;
 	struct btd_adapter *adapter = NULL;
-	struct btd_device *dev = NULL;
-	bdaddr_t src;
-	char peer_addr[18];
 	int perr;
+	gboolean is_auth = FALSE;
+	bdaddr_t src;
 
 	DBG("");
 
 	if(!na->setup)
 		return FALSE;
 
-	adapter = na->adapter;
-
-	ba2str(&na->setup->dst, peer_addr);
-	dev = adapter_find_device(adapter, peer_addr);
-	if (!dev) {
-		goto drop;
-	}
 	/*return TRUE while device is authenticating so
 	that authorization_handler will be called again*/
-	if (device_is_authenticating(dev))
+	is_auth = FALSE;
+	if (auth_in_progress(na, &is_auth) < 0)
+		goto drop;
+
+	if (is_auth == TRUE)
 		return TRUE;
 
 	na->authorization_timer = 0;
 
+	adapter = na->adapter;
 	adapter_get_address(adapter, &src);
 	perr = btd_request_authorization(&src, &na->setup->dst, BNEP_SVC_UUID,
 					auth_cb, na);
 	if (perr < 0) {
-		error("Refusing connect from %s: %s (%d)", peer_addr,
-				strerror(-perr), -perr);
+		error("Authorization failed :(%d)", -perr);
 		goto drop;
 	}
 	return FALSE;
@@ -759,6 +779,7 @@ static void confirm_event(GIOChannel *chan, gpointer user_data)
 	bdaddr_t src, dst;
 	char address[18];
 	GError *err = NULL;
+	gboolean is_auth = FALSE;
 
 	bt_io_get(chan, BT_IO_L2CAP, &err,
 			BT_IO_OPT_SOURCE_BDADDR, &src,
@@ -792,11 +813,26 @@ static void confirm_event(GIOChannel *chan, gpointer user_data)
 	bacpy(&na->setup->dst, &dst);
 	na->setup->io = g_io_channel_ref(chan);
 
-	na->authorization_timer = g_timeout_add_seconds(AUTH_TIMEOUT,
+	if (auth_in_progress(na, &is_auth) < 0)
+		goto drop;
+
+	if (is_auth)
+	{
+		na->authorization_timer = g_timeout_add_seconds(AUTH_TIMEOUT,
 				authorization_handler,
 				na);
-	return;
+	} else {
+		perr = btd_request_authorization(&src, &dst, BNEP_SVC_UUID,
+					auth_cb, na);
+		if (perr < 0) {
+			error("PAN authorization failed %s: %s (%d)", address,
+				strerror(-perr), -perr);
+			setup_destroy(na);
+			goto drop;
+		}
+	}
 
+	return;
 drop:
 	g_io_channel_shutdown(chan, TRUE, NULL);
 }
