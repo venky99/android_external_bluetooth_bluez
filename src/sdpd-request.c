@@ -101,6 +101,8 @@ static void sdp_cstate_free_buf(sdp_buf_t *buf)
 			}
 			SDPDBG("Free cstate :  timestamp : %d", p->timestamp);
 			free(p);
+			SDPDBG("Freed the cstate pointer");
+			return;
 		}
 	}
 }
