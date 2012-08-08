@@ -2209,7 +2209,8 @@ static DBusMessage *update_supported_attributes(DBusConnection *conn, DBusMessag
 	struct audio_device *device = data;
 	struct control *control = device->control;
 	DBusMessage *reply;
-	uint8_t *attribute_ids, len;
+	uint8_t *attribute_ids;
+	uint32_t len;
 	int err;
 	DBG("update_supported_attributes called");
 
@@ -2238,7 +2239,8 @@ static DBusMessage *update_attribute_values(DBusConnection *conn, DBusMessage *m
 	struct audio_device *device = data;
 	struct control *control = device->control;
 	DBusMessage *reply;
-	uint8_t *value_ids, len, attrib;
+	uint8_t *value_ids;
+	uint32_t  len, attrib;
 	int err;
 	DBG("update_attribute_values called");
 
@@ -2268,7 +2270,8 @@ static DBusMessage *update_current_values(DBusConnection *conn, DBusMessage *msg
 	struct audio_device *device = data;
 	struct control *control = device->control;
 	DBusMessage *reply;
-	uint8_t *value_ids, len;
+	uint8_t *value_ids;
+	uint32_t len;
 	int err;
 	DBG("update_current_values called");
 
@@ -2299,7 +2302,7 @@ static DBusMessage *update_attrib_values_text(DBusConnection *conn, DBusMessage 
 	struct control *control = device->control;
 	DBusMessage *reply;
 	char **attr_strs;
-	int	len, len_str;
+	uint32_t len, len_str;
 	uint8_t *attr_ids;
 	int err;
 	DBG("update_attribute_values_text called");
