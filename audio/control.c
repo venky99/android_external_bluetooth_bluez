@@ -2084,8 +2084,8 @@ static int send_attr_value_text( struct control *control,
 	pdu_id = (ply_settings->is_attr == TRUE) ? PDU_GET_APP_SETTING_ATTRIBUTE_TEXT_ID :
 			PDU_GET_APP_SETTING_VALUE_TEXT_ID;
 	if (ply_settings->pending_get != pdu_id) {
-		DBG("invalid pdu id");
-		goto cleanup;
+            DBG("invalid pdu id");
+            return 0;
 	}
 
 	if (0 == get_valid_value_text(attr_str, len)) {
