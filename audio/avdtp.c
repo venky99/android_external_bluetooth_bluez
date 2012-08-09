@@ -95,6 +95,7 @@
 #define STREAM_SETUP_TIMEOUT 3 // 2 seconds for SDP to start
 #define STREAM_TIMEOUT 20
 #define AVDTP_FLUSH_TIMEOUT 0x14D
+#define AVDTP_AUTH_TIMEOUT 2
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 
@@ -435,6 +436,7 @@ struct avdtp {
 
 	DBusPendingCall *pending_auth;
 	gboolean protection_required;
+	guint authorization_timer;	/*timer to handle authorization*/
 };
 
 static GSList *servers = NULL;
@@ -1274,6 +1276,12 @@ void avdtp_unref(struct avdtp *session)
 	server = session->server;
 
 	DBG("%p: freeing session and removing from list", session);
+
+	if (session->authorization_timer) {
+		DBG("freeing session authorization timer");
+		g_source_remove(session->authorization_timer);
+		session->authorization_timer = 0;
+	}
 
 	if (session->dc_timer)
 		remove_disconnect_timer(session);
@@ -2491,6 +2499,60 @@ static void auth_cb(DBusError *derr, void *user_data)
 	session->stream_setup = TRUE;
 }
 
+static gboolean avdtp_authorization_handler(gpointer user_data)
+{
+	struct avdtp *session;
+	struct audio_device *dev;
+	char address[18];
+	int perr;
+
+	session = user_data;
+	if (!session->server)
+		return FALSE;
+
+	if (session->state != AVDTP_SESSION_STATE_CONNECTING) {
+		DBG("AVDTP is not in Connecting state");
+		goto drop;
+	}
+
+	if (!session->io) {
+		error("Internal error");
+		goto drop;
+	}
+
+	dev = manager_get_device(&session->server->src, &session->dst, FALSE);
+
+	if (!dev) {
+		goto drop;
+	}
+
+	perr = audio_device_request_authorization(dev, ADVANCED_AUDIO_UUID,
+	auth_cb, session);
+
+	if (perr < 0) {
+		if (perr == -EBUSY) {
+			//Some other Authentication/authorization going on
+			//wait for some more time
+			error("Still some security request is going on..try again");
+			return TRUE;
+		} else {
+			error("AVDTP authorization failed");
+			goto drop;
+		}
+	}
+
+	session->authorization_timer = 0; //safety
+	dev->auto_connect = auto_connect;
+
+	return FALSE;
+
+	drop:
+		session->authorization_timer = 0;
+		avdtp_unref(session);
+		return FALSE;
+}
+
+
 static void avdtp_confirm_cb(GIOChannel *chan, gpointer data)
 {
 	struct avdtp *session;
@@ -2559,8 +2621,18 @@ static void avdtp_confirm_cb(GIOChannel *chan, gpointer data)
 	perr = audio_device_request_authorization(dev, ADVANCED_AUDIO_UUID,
 							auth_cb, session);
 	if (perr < 0) {
-		avdtp_unref(session);
-		goto drop;
+		if (perr == -EBUSY) {
+			//Some other Authentication/authorization going on
+			//wait for some time
+			error("Some security request is going on..try again");
+			session->authorization_timer = g_timeout_add_seconds(AVDTP_AUTH_TIMEOUT,
+							avdtp_authorization_handler,session);
+			return;
+		} else {
+			error("AVDTP authorization failed");
+			avdtp_unref(session);
+			goto drop;
+		}
 	}
 
 	dev->auto_connect = auto_connect;
