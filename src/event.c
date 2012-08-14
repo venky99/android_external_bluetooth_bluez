@@ -860,7 +860,7 @@ void btd_event_conn_failed(bdaddr_t *local, bdaddr_t *peer, uint8_t status)
 		adapter_remove_device(conn, adapter, device, TRUE);
 }
 
-void btd_event_disconn_complete(bdaddr_t *local, bdaddr_t *peer)
+void btd_event_disconn_complete(bdaddr_t *local, bdaddr_t *peer, uint8_t reason)
 {
 	struct btd_adapter *adapter;
 	struct btd_device *device;
@@ -873,7 +873,7 @@ void btd_event_disconn_complete(bdaddr_t *local, bdaddr_t *peer)
 	if (!device)
 		return;
 
-	adapter_remove_connection(adapter, device);
+	adapter_remove_connection(adapter, device, reason);
 }
 
 /* Section reserved to device HCI callbacks */

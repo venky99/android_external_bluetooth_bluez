@@ -316,6 +316,7 @@ static DBusMessage *get_properties(DBusConnection *conn,
 	const char *ptr;
 	dbus_bool_t boolean;
 	uint32_t class;
+	guint8 *conn_state;
 	const char *dev_type;
 	int i;
 	GSList *l;
@@ -391,8 +392,11 @@ static DBusMessage *get_properties(DBusConnection *conn,
 	dict_append_entry(&dict, "Blocked", DBUS_TYPE_BOOLEAN, &boolean);
 
 	/* Connected */
-	dict_append_entry(&dict, "Connected", DBUS_TYPE_BOOLEAN,
-							&device->connected);
+	conn_state = g_new0(guint8, 2);
+	conn_state[0] = device->connected;
+	conn_state[1] = 0;
+	dict_append_array(&dict, "Connected", DBUS_TYPE_BYTE, &conn_state, 2);
+	g_free(conn_state);
 
 	/* UUIDs */
 	str = g_new0(char *, g_slist_length(device->uuids) + 1);
@@ -1208,6 +1212,7 @@ gboolean device_is_connected(struct btd_device *device)
 void device_add_connection(struct btd_device *device, DBusConnection *conn,
 				uint8_t le, gboolean le_io_conn_pending)
 {
+	guint8 *conn_state;
 	if (device->connected) {
 		char addr[18];
 		ba2str(&device->bdaddr, addr);
@@ -1222,13 +1227,21 @@ void device_add_connection(struct btd_device *device, DBusConnection *conn,
 	device->connected = TRUE;
 	device->type = le ? DEVICE_TYPE_LE : DEVICE_TYPE_BREDR;
 
-	emit_property_changed(conn, device->path,
-					DEVICE_INTERFACE, "Connected",
-					DBUS_TYPE_BOOLEAN, &device->connected);
+	conn_state = g_new0(guint8, 2);
+	conn_state[0] = device->connected;
+
+	emit_array_property_changed(conn, device->path,
+		DEVICE_INTERFACE, "Connected",
+		DBUS_TYPE_BYTE, &conn_state, 2);
+
+	g_free(conn_state);
+
 }
 
-void device_remove_connection(struct btd_device *device, DBusConnection *conn)
+void device_remove_connection(struct btd_device *device, DBusConnection *conn,
+								uint8_t reason)
 {
+	guint8 *conn_state;
 	if (!device->connected) {
 		char addr[18];
 		ba2str(&device->bdaddr, addr);
@@ -1250,11 +1263,17 @@ void device_remove_connection(struct btd_device *device, DBusConnection *conn)
 		device->disconnects = g_slist_remove(device->disconnects, msg);
 	}
 
-	emit_property_changed(conn, device->path,
-					DEVICE_INTERFACE, "Connected",
-					DBUS_TYPE_BOOLEAN, &device->connected);
+	conn_state = g_new0(guint8, 2);
+	conn_state[0] = device->connected;
+	conn_state[1] = reason;
+
+	emit_array_property_changed(conn, device->path,
+		DEVICE_INTERFACE, "Connected",
+		DBUS_TYPE_BYTE, &conn_state, 2);
 
 	attrib_client_disconnect(device);
+
+	g_free(conn_state);
 
 }
 

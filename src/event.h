@@ -33,7 +33,8 @@ void btd_event_conn_complete(bdaddr_t *local, bdaddr_t *peer, uint8_t le);
 void btd_event_le_conn_params(bdaddr_t *local, bdaddr_t *peer,
 		uint16_t interval, uint16_t latency, uint16_t timeout);
 void btd_event_conn_failed(bdaddr_t *local, bdaddr_t *peer, uint8_t status);
-void btd_event_disconn_complete(bdaddr_t *local, bdaddr_t *peer);
+void btd_event_disconn_complete(bdaddr_t *local, bdaddr_t *peer,
+		uint8_t reason);
 void btd_event_rssi_update(bdaddr_t *local, bdaddr_t *peer, int8_t rssi);
 void btd_event_bonding_complete(bdaddr_t *local, bdaddr_t *peer,
 							uint8_t status);
