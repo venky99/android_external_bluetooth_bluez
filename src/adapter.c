@@ -3731,6 +3731,7 @@ void btd_adapter_start(struct btd_adapter *adapter)
 {
 	char address[18];
 	uint8_t cls[3];
+	uint32_t class;
 	gboolean powered;
 
 	ba2str(&adapter->bdaddr, address);
@@ -3748,10 +3749,13 @@ void btd_adapter_start(struct btd_adapter *adapter)
 
 	adapter_ops->set_name(adapter->dev_id, adapter->name);
 
-	if (read_local_class(&adapter->bdaddr, cls) < 0) {
-		uint32_t class = htobl(main_opts.class);
+	class = htobl(main_opts.class);
+	if (read_local_class(&adapter->bdaddr, cls) < 0)
+	/* Update Service, Major, Minor Class */
 		memcpy(cls, &class, 3);
-	}
+	else
+	/* Update Major, Minor Class only if CoD exists */
+		memcpy(cls, &class, 2);
 
 	btd_adapter_set_class(adapter, cls[1], cls[0]);
 
