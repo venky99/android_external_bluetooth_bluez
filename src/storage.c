@@ -328,7 +328,7 @@ struct bt_le_params *read_le_params(bdaddr_t *src, bdaddr_t *dst)
 				&max_ce_len,
 				&conn_timeout);
 
-	if (cnt != 10)
+	if (cnt != 11)
 		goto done;
 
 	params = g_malloc(sizeof(struct bt_le_params));
