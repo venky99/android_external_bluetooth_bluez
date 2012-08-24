@@ -3123,6 +3123,11 @@ int device_request_authentication(struct btd_device *device, auth_type_t type,
 		return -EALREADY;
 	}
 
+	if (adapter_is_authenticating(device->adapter)) {
+		error("Adapter is authenticating other device");
+		return -EBUSY;
+	}
+
 	agent = device_get_agent(device);
 	if (!agent) {
 		error("No agent available for request type %d", type);

@@ -1117,6 +1117,22 @@ static void adapter_update_devices(struct btd_adapter *adapter)
 	g_free(devices);
 }
 
+gboolean adapter_is_authenticating(struct btd_adapter *adapter)
+{
+	GSList *l;
+	gboolean authenticating = false;
+
+	for (l = adapter->devices; l; l = l->next) {
+		struct btd_device *dev = l->data;
+		if (device_is_authenticating(dev)) {
+			authenticating = true;
+			break;
+		}
+	}
+
+	return authenticating;
+}
+
 static void adapter_emit_uuids_updated(struct btd_adapter *adapter)
 {
 	char **uuids;

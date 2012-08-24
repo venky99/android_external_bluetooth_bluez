@@ -325,3 +325,4 @@ int btd_adapter_register_rssi_watcher(struct btd_adapter *adapter,
 
 int btd_adapter_unregister_rssi_watcher(struct btd_adapter *adapter,
 		bdaddr_t *bdaddr);
+gboolean adapter_is_authenticating(struct btd_adapter *adapter);
