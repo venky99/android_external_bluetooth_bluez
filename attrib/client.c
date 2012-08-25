@@ -456,6 +456,8 @@ static void connect_cb(GIOChannel *chan, GError *gerr, gpointer user_data)
 	struct gatt_service *gatt = user_data;
 	GAttrib *attrib = NULL;
 
+	DBG("");
+
 	if (gatt)
 		attrib = device_get_attrib(gatt->dev);
 
@@ -481,7 +483,6 @@ static void connect_cb(GIOChannel *chan, GError *gerr, gpointer user_data)
 					events_handler, gatt, NULL);
 		return;
 	}
-
 	return;
 fail:
 	g_attrib_unref(attrib);
@@ -1884,4 +1885,56 @@ int attrib_client_update (struct btd_device *device,
 		return -1;
 
 	return 0;
+}
+
+int client_create_le_io_connect(struct btd_device *device)
+{
+	DBusConnection *conn = get_dbus_connection();
+	struct gatt_service *gatt = device_get_gatt(device);
+	GAttrib *attrib;
+	GIOChannel *io;
+	bdaddr_t src;
+
+	DBG("");
+
+	if (device_get_type(device) != DEVICE_TYPE_LE)
+		return -1;
+
+	if (!gatt)
+		gatt = gatt_create(conn, device, 0);
+
+	if (!gatt)
+		goto fail;
+
+	device_set_gatt(device, gatt);
+
+	if (device_is_connected(device))
+		return -1;
+
+	if (device_get_attrib(device))
+		return -1;
+
+	adapter_get_address(device_get_adapter(device), &src);
+
+	io = bt_io_connect(BT_IO_L2CAP, connect_cb,
+				gatt, NULL, NULL,
+				BT_IO_OPT_SOURCE_BDADDR, &src,
+				BT_IO_OPT_DEST_BDADDR, &gatt->dba,
+				BT_IO_OPT_CID, ATT_CID,
+				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
+				BT_IO_OPT_INVALID);
+
+	if (!io)
+		goto fail;
+
+	attrib = g_attrib_new(io);
+	device_set_attrib(device, attrib);
+	g_io_channel_unref(io);
+	g_attrib_set_destroy_function(attrib, attrib_destroy, gatt);
+	g_attrib_set_disconnect_function(attrib, attrib_disconnect, gatt);
+
+	return 0;
+
+fail:
+	return -1;
 }

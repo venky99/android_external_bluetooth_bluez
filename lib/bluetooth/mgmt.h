@@ -71,6 +71,7 @@ struct mgmt_rp_read_info {
 	uint8_t hci_ver;
 	uint16_t hci_rev;
 	uint8_t name[MGMT_MAX_NAME_LENGTH];
+	uint8_t le_white_list_size;
 } __packed;
 
 struct mgmt_mode {
@@ -250,6 +251,26 @@ struct mgmt_cp_set_rssi_reporter {
 struct mgmt_cp_unset_rssi_reporter {
 	bdaddr_t bdaddr;
 } __packed;
+
+#define MGMT_OP_LE_READ_WHITE_LIST_SIZE	0xE000
+
+#define MGMT_OP_LE_CLEAR_WHITE_LIST	0xE001
+
+#define MGMT_OP_LE_ADD_DEV_WHITE_LIST	0xE002
+struct mgmt_cp_le_add_dev_white_list {
+	__u8 addr_type;
+	bdaddr_t bdaddr;
+} __packed;
+
+#define MGMT_OP_LE_REMOVE_DEV_WHITE_LIST	0xE003
+struct mgmt_cp_le_remove_dev_white_list {
+	__u8 addr_type;
+	bdaddr_t bdaddr;
+} __packed;
+
+#define MGMT_OP_LE_CREATE_CONN_WHITE_LIST	0xE004
+
+#define MGMT_OP_LE_CANCEL_CREATE_CONN_WHITE_LIST	0xE005
 
 #define MGMT_EV_CMD_COMPLETE		0x0001
 struct mgmt_ev_cmd_complete {

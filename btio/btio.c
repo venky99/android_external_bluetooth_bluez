@@ -39,7 +39,6 @@
 #include <glib.h>
 
 #include "btio.h"
-
 #define ERROR_FAILED(gerr, str, err) \
 		g_set_error(gerr, BT_IO_ERROR, BT_IO_ERROR_FAILED, \
 				str ": %s (%d)", strerror(err), err)
@@ -294,7 +293,6 @@ static int l2cap_connect(int sock, const bdaddr_t *dst,
 	err = connect(sock, (struct sockaddr *) &addr, sizeof(addr));
 	if (err < 0 && !(errno == EAGAIN || errno == EINPROGRESS))
 		return err;
-
 	return 0;
 }
 
@@ -416,7 +414,6 @@ gboolean set_le_params(int sock, struct bt_le_params *params, GError **err)
 			params->interval_min, params->interval_max,
 			params->latency, params->supervision_timeout,
 			params->min_ce_len, params->max_ce_len);
-
 		return FALSE;
 	}
 
@@ -428,7 +425,6 @@ gboolean set_le_params(int sock, struct bt_le_params *params, GError **err)
 	if (setsockopt(sock, SOL_BLUETOOTH, BT_LE_PARAMS, &bt_le_params,
 						sizeof(bt_le_params)) == 0)
 		return TRUE;
-
 	if (errno != ENOPROTOOPT) {
 		ERROR_FAILED(err, "setsockopt(BT_LE_PARAMS)", errno);
 		return FALSE;

@@ -812,9 +812,27 @@ void btd_event_conn_complete(bdaddr_t *local, bdaddr_t *peer, uint8_t le)
 {
 	struct btd_adapter *adapter;
 	struct btd_device *device;
+	char peer_addr[18];
+	DBusConnection *conn = get_dbus_connection();
 
-	if (!get_adapter_and_device(local, peer, &adapter, &device, TRUE))
+	adapter = manager_find_adapter(local);
+	if (!adapter) {
+		DBG("Unable to find matching adapter");
 		return;
+	}
+
+	ba2str(peer, peer_addr);
+
+	device = adapter_find_device(adapter, peer_addr);
+
+	if (!device) {
+		DBG("Create new device");
+		device = adapter_create_le_device(conn, adapter, peer_addr);
+		if (!device) {
+			DBG("Unable to create device");
+			return;
+		}
+	}
 
 	update_lastused(local, peer);
 
