@@ -1352,7 +1352,8 @@ static void avctp_confirm_cb(GIOChannel *chan, gpointer data)
 
 	if (control->io) {
 		error("Refusing unexpected connect from %s", address);
-		goto drop;
+		g_io_channel_shutdown(chan, TRUE, NULL);
+		return;
 	}
 
 	avctp_set_state(control, AVCTP_STATE_CONNECTING);
