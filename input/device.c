@@ -90,6 +90,10 @@ struct input_device {
 	GSList			*connections;
 };
 
+struct hidd_userdata {
+	struct input_conn *iconn;
+	struct hidp_connadd_req *req;
+};
 static GSList *devices = NULL;
 
 static struct input_device *find_device_by_path(GSList *list, const char *path)
@@ -545,14 +549,22 @@ static int ioctl_connadd(struct hidp_connadd_req *req)
 
 static void encrypt_completed(uint8_t status, gpointer user_data)
 {
-	struct hidp_connadd_req *req = user_data;
+	struct hidd_userdata *data = user_data;
+	const struct input_conn *iconn = data->iconn;
+	const struct input_device *idev = iconn->idev;
+	struct hidp_connadd_req *req = data->req;
 	int err;
+	dbus_bool_t connected;
 
 	if (status) {
 		error("Encryption failed: %s(0x%x)",
 				strerror(bt_error(status)), status);
 		goto failed;
 	}
+
+	connected = TRUE;
+	emit_property_changed(idev->conn, idev->path, INPUT_DEVICE_INTERFACE,
+					"Connected", DBUS_TYPE_BOOLEAN, &connected);
 
 	err = ioctl_connadd(req);
 	if (err == 0)
@@ -567,10 +579,11 @@ cleanup:
 	free(req->rd_data);
 
 	g_free(req);
+	g_free(data);
 }
 
 static int hidp_add_connection(const struct input_device *idev,
-				const struct input_conn *iconn)
+				const struct input_conn *iconn, gboolean *enc_needed)
 {
 	struct hidp_connadd_req *req;
 	struct fake_hid *fake_hid;
@@ -588,6 +601,7 @@ static int hidp_add_connection(const struct input_device *idev,
 	ba2str(&idev->src, src_addr);
 	ba2str(&idev->dst, dst_addr);
 
+	*enc_needed = false;
 	rec = fetch_record(src_addr, dst_addr, idev->handle);
 	if (!rec) {
 		error("Rejected connection from unknown device %s", dst_addr);
@@ -622,12 +636,17 @@ static int hidp_add_connection(const struct input_device *idev,
 
 	/* Encryption is mandatory for keyboards */
 	if (req->subclass & 0x40) {
+		struct hidd_userdata *data = g_new0(struct hidd_userdata, 1);
 		struct btd_adapter *adapter = device_get_adapter(idev->device);
 
+		data->iconn = iconn;
+		data->req = req;
+
 		err = btd_adapter_encrypt_link(adapter, (bdaddr_t *) &idev->dst,
-						encrypt_completed, req);
+						encrypt_completed, data);
 		if (err == 0) {
 			/* Waiting async encryption */
+			*enc_needed	= true;
 			return 0;
 		} else if (err != -EALREADY) {
 			error("encrypt_link: %s (%d)", strerror(-err), -err);
@@ -768,11 +787,12 @@ static int input_device_connected(struct input_device *idev,
 {
 	dbus_bool_t connected;
 	int err;
+	gboolean enc_pend;
 
 	if (iconn->intr_io == NULL || iconn->ctrl_io == NULL)
 		return -ENOTCONN;
 
-	err = hidp_add_connection(idev, iconn);
+	err = hidp_add_connection(idev, iconn, &enc_pend);
 	if (err < 0)
 		return err;
 
@@ -783,9 +803,11 @@ static int input_device_connected(struct input_device *idev,
 					G_IO_HUP | G_IO_ERR | G_IO_NVAL,
 					ctrl_watch_cb, iconn);
 
-	connected = TRUE;
-	emit_property_changed(idev->conn, idev->path, INPUT_DEVICE_INTERFACE,
-				"Connected", DBUS_TYPE_BOOLEAN, &connected);
+	if (enc_pend == false) {
+		connected = TRUE;
+		emit_property_changed(idev->conn, idev->path, INPUT_DEVICE_INTERFACE,
+						"Connected", DBUS_TYPE_BOOLEAN, &connected);
+	}
 
 	idev->dc_id = device_add_disconnect_watch(idev->device, disconnect_cb,
 							idev, NULL);

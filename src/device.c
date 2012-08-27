@@ -1516,7 +1516,7 @@ void device_set_hash(struct btd_device *device, uint32_t hash)
 	device->hash = hash;
 }
 
-void device_remove_bonding(struct btd_device *device)
+static void device_remove_linkkey(struct btd_device *device)
 {
 	char filename[PATH_MAX + 1];
 	char srcaddr[18], dstaddr[18];
@@ -1537,7 +1537,11 @@ void device_remove_bonding(struct btd_device *device)
 		textfile_casedel(filename, dstaddr);
 		device_set_bonded(device, FALSE);
 	}
+}
 
+void device_remove_bonding(struct btd_device *device)
+{
+	device_remove_linkkey(device);
 	btd_adapter_remove_bonding(device->adapter, &device->bdaddr);
 }
 
@@ -3159,6 +3163,10 @@ int device_request_authentication(struct btd_device *device, auth_type_t type,
 	auth->cb = cb;
 	auth->type = type;
 	device->authr = auth;
+	if (device->paired) {
+		device_remove_linkkey(device);
+		device->paired = FALSE;
+	}
 
 	switch (type) {
 	case AUTH_TYPE_PINCODE:
