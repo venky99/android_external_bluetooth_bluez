@@ -1377,6 +1377,39 @@ int conn_get_pending_sec_level(struct btd_device *device, uint8_t *pending_sec_l
 	return err;
 }
 
+int conn_set_auth_type(struct btd_device *device, uint8_t auth_type)
+{
+	struct hci_auth_info_req *req;
+	int err = 0, dd;
+	uint16_t dev_id;
+	char addr[18];
+	bdaddr_t src;
+
+	adapter_get_address(device->adapter, &src);
+	ba2str(&src, addr);
+	dev_id = hci_devid(addr);
+
+	dd = hci_open_dev(dev_id);
+	if (dd < 0)
+		return dd;
+
+	req = g_malloc0(sizeof(struct hci_auth_info_req));
+
+	if (req == NULL) {
+		hci_close_dev(dd);
+		return  -ENOMEM;
+	}
+	memset(req, 0, sizeof(struct hci_auth_info_req));
+	bacpy(&req->bdaddr, &device->bdaddr);
+	req->type = auth_type;
+
+	err = ioctl(dd, HCISETAUTHINFO, req);
+	g_free(req);
+
+	hci_close_dev(dd);
+	return err;
+}
+
 guint device_add_disconnect_watch(struct btd_device *device,
 				disconnect_watch watch, void *user_data,
 				GDestroyNotify destroy)

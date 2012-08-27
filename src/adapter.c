@@ -83,6 +83,7 @@
 #define IO_CAPABILITY_KEYBOARDDISPLAY	0x04
 #define IO_CAPABILITY_INVALID		0xFF
 
+#define HCI_AT_NO_BONDING 0x0
 #define check_address(address) bachk(address)
 
 static DBusConnection *connection = NULL;
@@ -1250,23 +1251,11 @@ void adapter_service_remove(struct btd_adapter *adapter, void *r)
 	adapter_emit_uuids_updated(adapter);
 }
 
-static struct btd_device *adapter_create_device(DBusConnection *conn,
-						struct btd_adapter *adapter,
-						const char *address,
-						device_type_t type)
+static gboolean device_is_hid_mouse(struct btd_adapter *adapter, const char *address)
 {
-	struct btd_device *device;
-	const char *path;
 	bdaddr_t remote;
 	uint32_t class = 0;
 	char *iconstr = NULL;
-
-	DBG("%s", address);
-
-	device = device_create(conn, adapter, address, type);
-	if (!device)
-		return NULL;
-
 
 	str2ba(address, &remote);
 	read_remote_class(&adapter->bdaddr, &remote, &class);
@@ -1276,6 +1265,27 @@ static struct btd_device *adapter_create_device(DBusConnection *conn,
 	iconstr = class_to_icon(class);
 	if ((NULL != iconstr) &&
 		(0 == strcmp("input-mouse", iconstr)))
+		return 1;
+
+	return 0;
+}
+
+static struct btd_device *adapter_create_device(DBusConnection *conn,
+						struct btd_adapter *adapter,
+						const char *address,
+						device_type_t type)
+{
+	struct btd_device *device;
+	const char *path;
+
+	DBG("%s", address);
+
+	device = device_create(conn, adapter, address, type);
+	if (!device)
+		return NULL;
+
+
+	if (device_is_hid_mouse(adapter, address))
 		device_set_temporary(device, FALSE);
 	else
 		device_set_temporary(device, TRUE);
@@ -2074,15 +2084,26 @@ static DBusMessage *create_paired_device_generic(DBusConnection *conn,
 			return btd_error_failed(msg, strerror(-err));
 	}
 
-	//if (device_get_type(device) != DEVICE_TYPE_LE)
-		return device_create_bonding(device, conn, msg,
-							agent_path, cap, oob);
+	err = device_create_bonding(device, conn, msg,
+						agent_path, cap, oob);
 
-	//err = device_browse_primary(device, conn, msg, TRUE);
-	//if (err < 0)
-		//return btd_error_failed(msg, strerror(-err));
+	if (err < 0)
+		return err;
 
-	//return NULL;
+	/* Pairing proceedure is not required for HID Mouse devices
+	** if it is a 2.0 device. So when user selects dedicated bonding
+	** with HID mouse device, set the auth_type to NO_BONDING and
+	** security level to LOW. When the remote device features are
+	** read and if it supports SSP, then internally the seruity level
+	** is set to HIGH and Dedicated bond is mandated. Thus we can
+	** make sure no bonding happens with 2.0 HID devices, at the
+	** same time dedicated bonding with 2.1 SSP devices.
+	*/
+	if( device_is_hid_mouse(adapter, address))
+		err = conn_set_auth_type(device, HCI_AT_NO_BONDING);
+
+	return err;
+
 }
 
 static DBusMessage *create_paired_device_oob(DBusConnection *conn,
