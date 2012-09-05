@@ -703,7 +703,7 @@ static uint8_t map_dbus_error(DBusError *err, uint16_t *handle)
 	if (strncmp(err->message, app_err, len) == 0) {
 		if (sscanf(&err->message[len], "%x.%x", &i, &j) != 2) {
 			*handle = 0xffff;
-			return ATT_ECODE_UNLIKELY;
+			return (uint8_t) i;
 		}
 
 		*handle = (uint16_t) j;
