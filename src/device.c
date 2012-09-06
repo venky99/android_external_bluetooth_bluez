@@ -2340,6 +2340,16 @@ static void primary_cb(GSList *services, guint8 status, gpointer user_data)
 
 	device_probe_drivers(device, uuids);
 
+	attrib_client_unregister(device);
+
+	g_slist_foreach(device->services, (GFunc) g_free, NULL);
+	g_slist_free(device->services);
+	device->services = NULL;
+
+	g_slist_foreach(device->primaries, (GFunc) g_free, NULL);
+	g_slist_free(device->primaries);
+	device->primaries = NULL;
+
 	device_register_services(req->conn, device, g_slist_copy(services), -1);
 
 	g_slist_free(uuids);
