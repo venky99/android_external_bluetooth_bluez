@@ -59,6 +59,10 @@
 #include <cap-ng.h>
 #endif
 
+#ifdef ANDROID
+#include <cutils/properties.h>
+#endif
+
 #define BLUEZ_NAME "org.bluez"
 
 #define LAST_ADAPTER_EXIT_TIMEOUT 30
@@ -381,6 +385,9 @@ int main(int argc, char *argv[])
 	struct sigaction sa;
 	uint16_t mtu = 0;
 	GKeyFile *config;
+#ifdef ANDROID
+	char bluez_dbg[PROPERTY_VALUE_MAX];
+#endif
 
 #ifdef ANDROID_SET_AID_AND_CAP
 	/* Unfortunately Android's init.rc does not yet support applying
@@ -413,6 +420,12 @@ int main(int argc, char *argv[])
 	}
 
 	g_option_context_free(context);
+
+#ifdef ANDROID
+	property_get("debug.bluetooth.bluez", bluez_dbg, "false");
+	if(!strcmp(bluez_dbg, "true"))
+		option_debug = g_strdup("*");
+#endif
 
 	if (option_version == TRUE) {
 		printf("%s\n", VERSION);
