@@ -3105,6 +3105,15 @@ static void pincode_cb(struct agent *agent, DBusError *err,
 
 	device->authr->cb = NULL;
 	device->authr->agent = NULL;
+
+	if (NULL == pincode) {
+		device_remove_stored(device);
+		if (device->tmp_records) {
+			sdp_list_free(device->tmp_records,
+				(sdp_free_func_t) sdp_record_free);
+			device->tmp_records = NULL;
+		}
+	}
 }
 
 static void confirm_cb(struct agent *agent, DBusError *err, void *data)
@@ -3536,4 +3545,17 @@ gboolean isSdpRequired(bdaddr_t dest)
 		return TRUE;
 	}
 	return FALSE;
+}
+
+void temp_records_clean_up(struct btd_device *device, struct btd_adapter *adapter,
+						const gchar *address )
+{
+	if (device_is_hid_mouse(adapter, address)) {
+		device_remove_stored(device);
+		if (device->tmp_records != NULL) {
+			sdp_list_free(device->tmp_records,
+					(sdp_free_func_t) sdp_record_free);
+			device->tmp_records = NULL;
+		}
+	}
 }
