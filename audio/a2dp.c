@@ -1050,19 +1050,6 @@ static gboolean suspend_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 		a2dp_sep->session = NULL;
 	}
 
-	dev = a2dp_get_dev(session);
-	DBG("dev value is %p: ", dev);
-	if (dev) {
-		uint8_t match = 0;
-		bdaddr_t dst;
-		avdtp_get_peers(session, NULL, &dst);
-		read_special_map_devaddr("remote_suspend", &dst, &match);
-		if (!match) {
-			control_suspend(dev);
-			a2dp_sep->remote_suspend = TRUE;
-		}
-	}
-
 	return TRUE;
 }
 
