@@ -5146,3 +5146,11 @@ int btd_adapter_le_remove_dev_white_list(struct btd_adapter *adapter,
 	return adapter_ops->le_remove_dev_white_list(adapter->dev_id, bdaddr,
 								addr_type);
 }
+
+int btd_adapter_le_cancel_create_conn(struct btd_adapter *adapter,
+		bdaddr_t *bdaddr)
+{
+	DBG("");
+	return adapter_ops->le_cancel_create_conn(adapter->dev_id,
+					bdaddr);
+}
