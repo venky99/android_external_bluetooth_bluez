@@ -1440,8 +1440,6 @@ static DBusMessage *adapter_start_discovery(DBusConnection *conn,
 	if (!adapter->up)
 		return btd_error_not_ready(msg);
 
-	force_master_role(adapter);
-
 	req = find_session(adapter->disc_sessions, sender);
 	if (req) {
 		session_ref(req);
