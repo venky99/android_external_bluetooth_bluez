@@ -833,7 +833,7 @@ static DBusMessage *set_value(DBusConnection *conn, DBusMessage *msg,
 
 	dbus_message_iter_get_fixed_array(&sub, &value, &len);
 
-	if (l2cap_connect(gatt, &gerr, chr->prim, FALSE) < 0) {
+	if (l2cap_connect(gatt, &gerr, chr->prim, TRUE) < 0) {
 		DBusMessage *reply = btd_error_failed(msg, gerr->message);
 		g_error_free(gerr);
 		return reply;
@@ -886,7 +886,7 @@ static DBusMessage *set_cli_conf(DBusConnection *conn, DBusMessage *msg,
 
 	dbus_message_iter_get_fixed_array(&sub, &value, &len);
 
-	if (l2cap_connect(gatt, &gerr, chr->prim, FALSE) < 0) {
+	if (l2cap_connect(gatt, &gerr, chr->prim, TRUE) < 0) {
 		DBusMessage *reply = btd_error_failed(msg, gerr->message);
 		g_error_free(gerr);
 		return reply;
@@ -1002,7 +1002,7 @@ static DBusMessage *fetch_value(DBusConnection *conn,
 		return reply;
 	}
 
-	if (l2cap_connect(gatt, &gerr, prim, FALSE) < 0) {
+	if (l2cap_connect(gatt, &gerr, prim, TRUE) < 0) {
 		DBusMessage *reply = btd_error_failed(msg, gerr->message);
 		g_error_free(gerr);
 		return reply;
