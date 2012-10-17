@@ -3770,7 +3770,7 @@ int avdtp_start(struct avdtp *session, struct avdtp_stream *stream)
 
 	if (stream->starting == TRUE) {
 		DBG("stream already started");
-		return -EINVAL;
+		return -EAGAIN;
 	}
 
 	memset(&req, 0, sizeof(req));

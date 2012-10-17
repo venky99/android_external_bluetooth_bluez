@@ -2297,6 +2297,7 @@ unsigned int a2dp_resume(struct avdtp *session, struct a2dp_sep *sep,
 {
 	struct a2dp_setup_cb *cb_data;
 	struct a2dp_setup *setup;
+	int err;
 
 	setup = a2dp_setup_get(session);
 	if (!setup)
@@ -2314,7 +2315,8 @@ unsigned int a2dp_resume(struct avdtp *session, struct a2dp_sep *sep,
 		goto failed;
 		break;
 	case AVDTP_STATE_OPEN:
-		if (avdtp_start(session, sep->stream) < 0) {
+		err = avdtp_start(session, sep->stream);
+		if (err < 0 && err != -EAGAIN) {
 			error("avdtp_start failed");
 			goto failed;
 		}
