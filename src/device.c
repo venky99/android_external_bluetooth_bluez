@@ -1271,6 +1271,18 @@ void device_remove_connection(struct btd_device *device, DBusConnection *conn,
 		DEVICE_INTERFACE, "Connected",
 		DBUS_TYPE_BYTE, &conn_state, 2);
 
+	if (!(device->paired)) {
+		attrib_client_unregister(device);
+
+		g_slist_foreach(device->services, (GFunc) g_free, NULL);
+		g_slist_free(device->services);
+		device->services = NULL;
+
+		g_slist_foreach(device->primaries, (GFunc) g_free, NULL);
+		g_slist_free(device->primaries);
+		device->primaries = NULL;
+	}
+
 	attrib_client_disconnect(device);
 
 	g_free(conn_state);
@@ -1608,6 +1620,14 @@ void device_remove(struct btd_device *device, gboolean remove_stored)
 	device->drivers = NULL;
 
 	attrib_client_unregister(device);
+
+	g_slist_foreach(device->services, (GFunc) g_free, NULL);
+	g_slist_free(device->services);
+	device->services = NULL;
+
+	g_slist_foreach(device->primaries, (GFunc) g_free, NULL);
+	g_slist_free(device->primaries);
+	device->primaries = NULL;
 
 	btd_device_unref(device);
 }
@@ -2341,15 +2361,10 @@ static void primary_cb(GSList *services, guint8 status, gpointer user_data)
 
 	device_probe_drivers(device, uuids);
 
-	attrib_client_unregister(device);
-
-	g_slist_foreach(device->services, (GFunc) g_free, NULL);
-	g_slist_free(device->services);
-	device->services = NULL;
-
-	g_slist_foreach(device->primaries, (GFunc) g_free, NULL);
-	g_slist_free(device->primaries);
-	device->primaries = NULL;
+	if (device->services) {
+		DBG(" Services exists in the device cache");
+		gatt_services_changed(device);
+	}
 
 	device_register_services(req->conn, device, g_slist_copy(services), -1);
 
