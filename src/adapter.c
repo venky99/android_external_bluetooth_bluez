@@ -2736,7 +2736,7 @@ static int add_pbap_pse_record(struct btd_adapter *adapter)
 	sdp_record_t *record;
 	uint8_t u8 = 19;
 	sdp_data_t *channel;
-	uint8_t formats[] = {0x01};
+	uint8_t formats[] = {0x03};
 	uint8_t dtd = SDP_UINT8;
 	sdp_data_t *sflist;
 	int ret = 0;
