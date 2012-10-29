@@ -7,7 +7,7 @@
  *  Copyright (C) 2002-2010  Marcel Holtmann <marcel@holtmann.org>
  *  Copyright (C) 2002-2003  Stephen Crane <steve.crane@rococosoft.com>
  *  Copyright (C) 2002-2003  Jean Tourrilhes <jt@hpl.hp.com>
- *  Copyright (c) 2010, Code Aurora Forum.  All Rights Reserved.
+ *  Copyright (C) 2010-2012 Code Aurora Forum. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -1911,7 +1911,7 @@ static int add_pbap(sdp_session_t *session, svc_info_t *si)
 	sdp_record_t record;
 	uint8_t chan = si->channel ? si->channel : 19;
 	sdp_data_t *channel;
-	uint8_t formats[] = {0x01};
+	uint8_t formats[] = {0x03};
 	uint8_t dtd = SDP_UINT8;
 	sdp_data_t *sflist;
 	int ret = 0;
