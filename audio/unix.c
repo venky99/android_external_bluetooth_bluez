@@ -73,6 +73,7 @@ struct a2dp_data {
 	struct avdtp *session;
 	struct avdtp_stream *stream;
 	struct a2dp_sep *sep;
+	guint timer_id;
 };
 
 struct headset_data {
@@ -242,6 +243,11 @@ static void a2dp_local_resume_complete(struct avdtp *session,
 
 	a2dp = &client->d.a2dp;
 	error("resume failed with err %d", err);
+	if (a2dp->timer_id >0){
+		DBG("Remove the timer for a2dp_resume");
+		g_source_remove(a2dp->timer_id);
+		a2dp->timer_id = 0;
+	}
 	if (client->cb_id > 0) {
 		avdtp_stream_remove_cb(a2dp->session, a2dp->stream,
 					client->cb_id);
@@ -313,7 +319,12 @@ static void stream_state_changed(struct avdtp_stream *stream,
 		if ((old_state == AVDTP_STATE_STREAMING) &&
 		    (client->local_suspend == FALSE)) {
 			DBG("a2dp_resume being called as remote suspend triggered");
-			g_timeout_add(RESUME_TIMEOUT, a2dp_local_resume, client);
+			if (a2dp->timer_id > 0){
+				DBG("Remove the timer for a2dp_resume first and then start new");
+				g_source_remove(a2dp->timer_id);
+				a2dp->timer_id = 0;
+			}
+			a2dp->timer_id = g_timeout_add(RESUME_TIMEOUT, a2dp_local_resume, client);
 		}
 	default:
 		break;
