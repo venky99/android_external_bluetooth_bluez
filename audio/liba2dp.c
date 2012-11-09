@@ -1386,10 +1386,16 @@ int a2dp_stop(a2dpData d)
 	struct bluetooth_data* data = (struct bluetooth_data*)d;
 	DBG("a2dp_stop\n");
 	if (!data)
+		return 1;
+	if( data->state != A2DP_STATE_STARTED ){
+		DBG("*****liba2dp_state =%d", data->state);
+		return 1 ;
+	}
+	else {
+		DBG("liba2dp_state =%d", data->state);
+		set_command(data, A2DP_CMD_STOP);
 		return 0;
-
-	set_command(data, A2DP_CMD_STOP);
-	return 0;
+	}
 }
 
 void a2dp_cleanup(a2dpData d)

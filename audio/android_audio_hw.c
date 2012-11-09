@@ -599,11 +599,12 @@ static int _out_bt_enable(struct astream_out *out, bool enable)
 
 static int _out_a2dp_suspend(struct astream_out *out, bool suspend)
 {
+    int liba2dpstop = 0;
     pthread_mutex_lock(&out->lock);
-    out->suspended = suspend;
-    out_standby_stream_locked(out);
+    liba2dpstop = out_standby_stream_locked(out);
+    if (!(liba2dpstop) || !(suspend))
+        out->suspended = suspend;
     pthread_mutex_unlock(&out->lock);
-
     return 0;
 }
 
