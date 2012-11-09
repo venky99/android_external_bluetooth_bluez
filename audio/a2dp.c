@@ -86,6 +86,7 @@ struct a2dp_sep {
 	struct avdtp *session;
 	struct avdtp_stream *stream;
 	guint suspend_timer;
+	guint reconfig_timer_index;
 	gboolean delay_reporting;
 	gboolean locked;
 	gboolean suspending;
@@ -446,6 +447,14 @@ static gboolean sbc_setconf_ind(struct avdtp *session,
 		DBG("Sink %p: Set_Configuration_Ind", sep);
 	else
 		DBG("Source %p: Set_Configuration_Ind", sep);
+
+	DBG("reconfig_timer_index %d", a2dp_sep->reconfig_timer_index );
+
+	if(a2dp_sep->reconfig_timer_index) {
+                g_source_remove(a2dp_sep->reconfig_timer_index);
+                a2dp_sep->reconfig_timer_index = 0;
+                DBG("*** Removing reconfig_timer_index");
+        }
 
 	setup = a2dp_setup_get(session);
 	if (!setup)
@@ -1115,6 +1124,12 @@ static gboolean close_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 		return TRUE;
 
 	a2dp_sep->remote_suspend = FALSE;
+	DBG("Removing reconfig_timer_index %d",  a2dp_sep->reconfig_timer_index);
+	if(a2dp_sep->reconfig_timer_index) {
+		g_source_remove(a2dp_sep->reconfig_timer_index);
+		a2dp_sep->reconfig_timer_index = 0;
+		DBG("*** Removing reconfig_timer_index");
+	}
 
 	finalize_setup_errno(setup, -ECONNRESET, finalize_suspend,
 							finalize_resume, NULL);
@@ -1137,6 +1152,8 @@ static gboolean a2dp_reconfigure(gpointer data)
 
 	if (!setup->rsep || sep->codec != rsep_codec->media_codec_type)
 		setup->rsep = avdtp_find_remote_sep(setup->session, sep->lsep);
+
+	sep->reconfig_timer_index  = 0;
 
 	posix_err = avdtp_set_configuration(setup->session, setup->rsep,
 						sep->lsep,
@@ -1182,8 +1199,12 @@ static void close_cfm(struct avdtp *session, struct avdtp_local_sep *sep,
 	if (!setup->rsep)
 		setup->rsep = avdtp_stream_get_remote_sep(stream);
 
-	if (setup->reconfigure)
-		g_timeout_add(RECONFIGURE_TIMEOUT, a2dp_reconfigure, setup);
+	if (setup->reconfigure) {
+		a2dp_sep->reconfig_timer_index =
+			g_timeout_add(RECONFIGURE_TIMEOUT, a2dp_reconfigure, setup);
+		DBG(" ***Reconfig timer %d : rconfig_inndex ", a2dp_sep->reconfig_timer_index );
+	}
+
 }
 
 static gboolean abort_ind(struct avdtp *session, struct avdtp_local_sep *sep,
@@ -1197,6 +1218,11 @@ static gboolean abort_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 	else
 		DBG("Source %p: Abort_Ind", sep);
 
+	if(a2dp_sep->reconfig_timer_index) {
+		g_source_remove(a2dp_sep->reconfig_timer_index);
+		a2dp_sep->reconfig_timer_index = 0;
+		DBG("***Removing reconfig_timer_index abort");
+        }
 	a2dp_sep->remote_suspend = FALSE;
 	a2dp_sep->stream = NULL;
 
