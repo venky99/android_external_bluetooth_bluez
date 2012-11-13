@@ -1077,6 +1077,10 @@ static void suspend_cfm(struct avdtp *session, struct avdtp_local_sep *sep,
 		DBG("Source %p: Suspend_Cfm", sep);
 
 	a2dp_sep->suspending = FALSE;
+	if (a2dp_sep->suspend_timer) {
+		g_source_remove(a2dp_sep->suspend_timer);
+		a2dp_sep->suspend_timer = 0;
+	}
 
 	setup = find_setup_by_session(session);
 	if (!setup)
