@@ -64,7 +64,7 @@
 #include "../attrib/client.h"
 
 #define DISCONNECT_TIMER	2
-#define DISCOVERY_TIMER		2
+#define DISCOVERY_TIMER		4
 #define SDP_TIMEOUT		30
 
 /* When all services should trust a remote device */
@@ -2684,9 +2684,6 @@ void device_set_type(struct btd_device *device, device_type_t type)
 static gboolean start_discovery(gpointer user_data)
 {
 	struct btd_device *device = user_data;
-
-	if (!device->connected)
-		return FALSE;
 
 	device->discov_timer = 0;
 
