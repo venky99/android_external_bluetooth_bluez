@@ -4,7 +4,7 @@
  *
  *  Copyright (C) 2006-2010  Nokia Corporation
  *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
- *  Copyright (C) 2010-2012 The Linux Foundation. All rights reserved
+ *  Copyright (C) 2010-2013 The Linux Foundation. All rights reserved
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -3021,7 +3021,10 @@ static DBusMessage *add_reserved_service_records(DBusConnection *conn,
 				 * once it is addressed
 				 */
 				ret = mas0_handle = add_mas0_record(adapter);
-				mas1_handle = add_mas1_record(adapter);
+				DBG("add map sdp, main_opts.map_email = %d", main_opts.map_email);
+				if(main_opts.map_email) {
+					mas1_handle = add_mas1_record(adapter);
+				}
 				break;
 		}
 		if (ret < 0) {
@@ -3060,12 +3063,13 @@ static DBusMessage *remove_reserved_service_records(DBusConnection *conn,
 			 * introducing new interface. To be removed,
 			 * once it is addressed
 			 */
-			if (mas1_handle && remove_record_from_server(mas1_handle))
-				return g_dbus_create_error(msg,
-					ERROR_INTERFACE ".Failed", "Failed to remove sdp record");
-			/* clear the mas handles*/
 			mas0_handle = 0;
-			mas1_handle = 0;
+			if(main_opts.map_email) {
+				if (mas1_handle && remove_record_from_server(mas1_handle))
+					return g_dbus_create_error(msg,
+					ERROR_INTERFACE ".Failed", "Failed to remove sdp record");
+				mas1_handle = 0;
+			}
 		}
 	}
 
