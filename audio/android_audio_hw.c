@@ -452,7 +452,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void* buffer,
         frames_written += frames;
         _out_inc_wr_idx_locked(out, frames);
         pthread_mutex_lock(&out->lock);
-        if (out->standby) {
+        if (out->standby && out->bt_enabled) {
             out->standby = false;
             pthread_mutex_unlock(&out->lock);
             ALOGV("*********Audio thread wait");
@@ -507,7 +507,7 @@ static void *_out_buf_thread_func(void *context)
                 }
 
                 pthread_mutex_lock(&out->lock);
-                if (out->standby) {
+                if (out->standby || !out->bt_enabled) {
                     /* abort and clear all pending frames if standby requested */
                     pthread_mutex_unlock(&out->lock);
                     frames = _out_frames_ready_locked(out);
