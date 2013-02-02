@@ -526,9 +526,9 @@ int agent_request_pincode(struct agent *agent, struct btd_device *device,
 	req = agent_request_new(agent, AGENT_REQUEST_PINCODE, cb,
 							user_data, destroy);
 
-	conn_get_pending_sec_level(device, &pending_sec_level);
-	DBG("Connection pending security level is %d", (int)pending_sec_level);
-	secure = (pending_sec_level == BT_SECURITY_HIGH);
+	//conn_get_pending_sec_level(device, &pending_sec_level);
+	//DBG("Connection pending security level is %d", (int)pending_sec_level);
+	//secure = (pending_sec_level == BT_SECURITY_HIGH);
 	DBG("Secure Pairing %d", secure);
 	err = pincode_request_new(req, dev_path, FALSE, secure);
 	if (err < 0)
