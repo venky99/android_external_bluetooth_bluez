@@ -420,7 +420,6 @@ static ssize_t out_write(struct audio_stream_out *stream, const void* buffer,
 
     if (out->standby) {
         acquire_wake_lock(PARTIAL_WAKE_LOCK, A2DP_WAKE_LOCK_NAME);
-        out->standby = false;
         out->last_write_time = system_time();
         out->buf_rd_idx = 0;
         out->buf_wr_idx = 0;
@@ -454,9 +453,15 @@ static ssize_t out_write(struct audio_stream_out *stream, const void* buffer,
         _out_inc_wr_idx_locked(out, frames);
         pthread_mutex_lock(&out->lock);
         if (out->standby) {
-            goto err_write;
-        }
-        pthread_mutex_unlock(&out->lock);
+            out->standby = false;
+            pthread_mutex_unlock(&out->lock);
+            ALOGV("*********Audio thread wait");
+            pthread_cond_timeout_np(&out->buf_cond,
+                                              &out->buf_lock,
+                                              BUF_WRITE_AVAILABILITY_TIMEOUT_MS);
+            ALOGV("*********Audio thread wait end ");
+        } else
+           pthread_mutex_unlock(&out->lock);
     }
     pthread_mutex_unlock(&out->buf_lock);
 
@@ -566,6 +571,7 @@ static void *_out_buf_thread_func(void *context)
 wait:
         if (!out->buf_thread_exit) {
             pthread_cond_wait(&out->buf_cond, &out->buf_lock);
+            ALOGV("Got Signal");
         }
     }
     pthread_mutex_unlock(&out->buf_lock);
