@@ -141,3 +141,6 @@ void open_sdp_channel(struct btd_device *device);
 void close_sdp_channel(struct btd_device *device);
 gboolean isSdpRequired(bdaddr_t dest);
 bdaddr_t *get_bdaddr(struct btd_device *device);
+
+void temp_records_clean_up(struct btd_device *device, struct btd_adapter *adapter,
+						const gchar *address);

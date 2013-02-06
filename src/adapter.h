@@ -331,3 +331,4 @@ gboolean adapter_is_authenticating(struct btd_adapter *adapter);
 
 int btd_adapter_le_cancel_create_conn(struct btd_adapter *adapter,
 			bdaddr_t *bdaddr);
+gboolean device_is_hid_mouse(struct btd_adapter *adapter, const char *address);

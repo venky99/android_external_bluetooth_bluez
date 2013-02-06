@@ -1251,7 +1251,7 @@ void adapter_service_remove(struct btd_adapter *adapter, void *r)
 	adapter_emit_uuids_updated(adapter);
 }
 
-static gboolean device_is_hid_mouse(struct btd_adapter *adapter, const char *address)
+gboolean device_is_hid_mouse(struct btd_adapter *adapter, const char *address)
 {
 	bdaddr_t remote;
 	uint32_t class = 0;
@@ -1774,7 +1774,7 @@ static DBusMessage *cancel_device_creation(DBusConnection *conn,
 {
 	struct btd_adapter *adapter = data;
 	const gchar *address, *sender = dbus_message_get_sender(msg);
-	struct btd_device *device;
+	struct btd_device *device, *device1;
 
 	if (dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &address,
 						DBUS_TYPE_INVALID) == FALSE)
@@ -1785,8 +1785,12 @@ static DBusMessage *cancel_device_creation(DBusConnection *conn,
 
 	device = adapter_find_device(adapter, address);
 	if (!device || !device_is_creating(device, NULL))
-		return btd_error_does_not_exist(msg);
+	{
+		device1 = adapter_get_device(conn, adapter, address);
+		temp_records_clean_up(device1, adapter, address);
 
+		return btd_error_does_not_exist(msg);
+	}
 	if (!device_is_creating(device, sender))
 		return btd_error_not_authorized(msg);
 
