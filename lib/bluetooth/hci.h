@@ -33,7 +33,7 @@ extern "C" {
 
 #define HCI_MAX_DEV	16
 
-#ifndef SAMSUNGBLUEZ
+#ifndef SAMSUNG_BLUEZ
 #define HCI_MAX_ACL_SIZE	1500
 #else
 #define HCI_MAX_ACL_SIZE        1024
