@@ -16,6 +16,10 @@ LOCAL_CFLAGS:= \
 	-DCONFIGDIR=\"/etc/bluetooth\" \
 	-DANDROID \
 
+ifeq ($(BOARD_HAVE_SAMSUNG_BLUEZ),true)
+LOCAL_CFLAGS+= -DSAMSUNG_BLUEZ
+endif
+
 LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../lib \
 	$(LOCAL_PATH)/../gdbus \

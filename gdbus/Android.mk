@@ -6,6 +6,10 @@ LOCAL_SRC_FILES:= \
 
 LOCAL_CFLAGS+=-O3 -DNEED_DBUS_WATCH_GET_UNIX_FD
 
+ifeq ($(BOARD_HAVE_SAMSUNG_BLUEZ),true)
+LOCAL_CFLAGS+= -DSAMSUNG_BLUEZ
+endif
+
 LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../lib \
 	$(call include-path-for, glib) \

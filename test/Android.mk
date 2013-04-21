@@ -11,6 +11,10 @@ include $(CLEAR_VARS)
 LOCAL_CFLAGS:= \
 	-DVERSION=\"4.93\"
 
+ifeq ($(BOARD_HAVE_SAMSUNG_BLUEZ),true)
+LOCAL_CFLAGS+= -DSAMSUNG_BLUEZ
+endif
+
 LOCAL_SRC_FILES:= \
 	hstest.c
 

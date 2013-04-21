@@ -29,6 +29,10 @@ LOCAL_CFLAGS:= \
 	-DANDROID \
 	-D__S_IFREG=0100000  # missing from bionic stat.h
 
+ifeq ($(BOARD_HAVE_SAMSUNG_BLUEZ),true)
+LOCAL_CFLAGS+= -DSAMSUNG_BLUEZ
+endif
+
 
 LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../lib \

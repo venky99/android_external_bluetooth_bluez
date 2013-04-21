@@ -1,6 +1,10 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
+ifeq ($(BOARD_HAVE_SAMSUNG_BLUEZ),true)
+LOCAL_CFLAGS:= -DSAMSUNG_BLUEZ
+endif
+
 LOCAL_SRC_FILES:= \
 	bluetooth.c \
 	sdp.c \

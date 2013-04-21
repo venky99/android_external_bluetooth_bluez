@@ -33,7 +33,11 @@ extern "C" {
 
 #define HCI_MAX_DEV	16
 
+#ifndef SAMSUNGBLUEZ
 #define HCI_MAX_ACL_SIZE	1500
+#else
+#define HCI_MAX_ACL_SIZE        1024
+#endif
 #define HCI_MAX_SCO_SIZE	255
 #define HCI_MAX_EVENT_SIZE	260
 #define HCI_MAX_FRAME_SIZE	(HCI_MAX_ACL_SIZE + 4)
@@ -2130,9 +2134,19 @@ typedef struct {
 	uint8_t		bdaddr_type;
 	bdaddr_t	bdaddr;
 	uint8_t		length;
+#ifndef SAMSUNG_BLUEZ
 	uint8_t		data[0];
+#endif
+#ifdef SAMSUNG_BLUEZ
+	uint8_t		data[31];
+	uint8_t		rssi;
+#endif
 } __attribute__ ((packed)) le_advertising_info;
+#ifndef SAMSUNG_BLUEZ
 #define LE_ADVERTISING_INFO_SIZE 9
+#else
+#define LE_ADVERTISING_INFO_SIZE 41
+#endif
 
 #define EVT_LE_CONN_UPDATE_COMPLETE	0x03
 typedef struct {

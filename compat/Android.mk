@@ -15,6 +15,10 @@ LOCAL_SRC_FILES:= \
 LOCAL_CFLAGS:= \
 	-DVERSION=\"4.93\" -DSTORAGEDIR=\"/data/misc/bluetoothd\" -DNEED_PPOLL -D__ANDROID__
 
+ifeq ($(BOARD_HAVE_SAMSUNG_BLUEZ),true)
+LOCAL_CFLAGS+= -DSAMSUNG_BLUEZ
+endif
+
 LOCAL_C_INCLUDES:=\
 	$(LOCAL_PATH)/../lib \
 	$(LOCAL_PATH)/../src \

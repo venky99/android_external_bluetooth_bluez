@@ -17,6 +17,10 @@ LOCAL_CFLAGS:= \
 	-DBLUETOOTH_PLUGIN_BUILTIN \
 	-DSTORAGEDIR=\"/data/misc/bluetoothd\"
 
+ifeq ($(BOARD_HAVE_SAMSUNG_BLUEZ),true)
+LOCAL_CFLAGS+= -DSAMSUNG_BLUEZ
+endif
+
 LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../btio \
 	$(LOCAL_PATH)/../lib \

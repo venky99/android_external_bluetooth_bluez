@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
 ifeq ($(BOARD_HAVE_BLUETOOTH_BLUEZ),true)
   include $(all-subdir-makefiles)
 endif

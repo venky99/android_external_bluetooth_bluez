@@ -72,15 +72,31 @@ struct bt_security {
 
 #define BT_DEFER_SETUP	7
 
+#ifndef SAMSUNG_BLUEZ
 #define BT_FLUSHABLE	8
+#else
+#define BT_FLUSHABLE    10
+#endif
 
 #define BT_FLUSHABLE_OFF	0
 #define BT_FLUSHABLE_ON		1
 
+#ifndef SAMSUNG_BLUEZ
 #define BT_POWER	9
+#else
+#define BT_POWER        8
+#endif
+
 struct bt_power {
 	uint8_t force_active;
 };
+
+#ifdef SAMSUNG_BLUEZ
+#define BT_AMP_POLICY	9
+#define BT_AMP_POLICY_REQUIRE_BR_EDR	0
+#define BT_AMP_POLICY_PREFER_AMP		1
+#define BT_AMP_POLICY_PREFER_BR_EDR		2
+#endif
 
 #define BT_AMP_POLICY	10
 #define BT_AMP_POLICY_REQUIRE_BR_EDR	0
